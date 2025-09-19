@@ -2,37 +2,42 @@
 
 def parse_robot_file(path):
     """
-    Lê um arquivo .robot e extrai blocos de comentários
-    que descrevem Features/Scenarios no estilo Gherkin.
-
-    Retorna uma lista de strings, onde cada string representa
-    uma Feature (com seus cenários).
+    Lê um arquivo .robot e extrai blocos de comentários que descrevem Features/Scenarios.
+    Somente linhas de comentários que fazem parte de um bloco que começa com 'Feature'
+    são consideradas. Comentários comuns são ignorados.
     """
 
     features = []      # Lista final com todas as Features extraídas
     current_block = [] # Acumulador temporário para o bloco atual de comentários
+    inside_feature = False  # Flag para indicar se estamos dentro de um bloco válido
 
-    # Abrimos o arquivo no caminho especificado
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
             stripped = line.strip()
 
-            # Caso a linha seja comentário (começa com "#")
             if stripped.startswith("#"):
-                # Remove "#" e espaços extras, deixando apenas o conteúdo
                 uncommented = stripped.lstrip("#").strip()
 
-                if uncommented:  # só adiciona se a linha não for vazia
+                # Se encontramos um "Feature", começa um bloco
+                if uncommented.lower().startswith("feature"):
+                    if current_block:
+                        features.append("\n".join(current_block))
+                        current_block = []
+                    inside_feature = True
+                    current_block.append(uncommented)
+
+                # Se já estamos dentro de um Feature → adiciona linha
+                elif inside_feature and uncommented:
                     current_block.append(uncommented)
 
             else:
-                # Se chegamos a uma linha normal e já estávamos montando um bloco
+                # Linha não comentada → fecha o bloco atual, se houver
                 if current_block:
-                    # Junta todas as linhas do bloco em um único texto
                     features.append("\n".join(current_block))
-                    current_block = []  # limpa para a próxima Feature
+                    current_block = []
+                    inside_feature = False
 
-        # Se terminar o arquivo e ainda existir bloco pendente → salva
+        # Se terminou o arquivo e ainda tem bloco aberto
         if current_block:
             features.append("\n".join(current_block))
 
