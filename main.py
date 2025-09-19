@@ -20,6 +20,9 @@ class MainWindow(QMainWindow):
         self.include_subfolders = False
         self.folder = None
         self.all_features = []  # Guardará todos os Features extraídos
+        self.file_counter = 0   # Quantidade de arquivos .robot
+        self.feature_counter = 0  # Quantidade de blocos Feature
+        self.folder_counter = 0   # Quantidade de pastas analisadas
 
         # ---------- Layout principal ----------
         layout = QVBoxLayout()
@@ -60,7 +63,7 @@ class MainWindow(QMainWindow):
         self.theme_button.clicked.connect(self.toggle_theme)
         layout.addWidget(self.theme_button)
 
-        # Caixa de log para debug (mostra arquivos encontrados e mensagens internas)
+        # Caixa de log para debug
         self.log_output = QTextEdit()
         self.log_output.setReadOnly(True)
         self.log_output.setPlaceholderText("Logs do sistema aparecerão aqui...")
@@ -79,32 +82,37 @@ class MainWindow(QMainWindow):
 
     def toggle_subfolders(self, state):
         """Ativa/desativa a inclusão de subpastas"""
-        self.include_subfolders = state == Qt.Checked
+        self.include_subfolders = (state == Qt.Checked)
         self.log_output.append(f"[INFO] Incluir subpastas: {self.include_subfolders}")
 
     def select_folder(self):
         """Seleciona pasta e busca arquivos .robot"""
         folder = QFileDialog.getExistingDirectory(self, "Selecione a pasta com arquivos .robot")
         if folder:
+            # Reset contadores e dados anteriores
             self.file_list.clear()
             self.folder = folder
             self.all_features.clear()
+            self.file_counter = 0
+            self.feature_counter = 0
+            self.folder_counter = 0
 
-            self.log_output.append(f"[INFO] Pasta selecionada: {folder}")
+            self.log_output.append(f"\n[INFO] Pasta selecionada: {folder}")
 
             if self.include_subfolders:
-                # Busca recursiva (entra em subpastas)
+                # Busca recursiva
                 for root, dirs, files in os.walk(folder):
-                    for file in files:
-                        if file.lower().endswith(".robot"):
-                            full_path = os.path.join(root, file)
-                            self._process_file(full_path)
+                    self._process_folder(root, files)
             else:
-                # Apenas arquivos na pasta raiz
-                for file in os.listdir(folder):
-                    if file.lower().endswith(".robot"):
-                        full_path = os.path.join(folder, file)
-                        self._process_file(full_path)
+                # Apenas a pasta raiz
+                files = os.listdir(folder)
+                self._process_folder(folder, files)
+
+            # Resumo final
+            self.log_output.append("\n[RESUMO FINAL]")
+            self.log_output.append(f"- Total de pastas analisadas: {self.folder_counter}")
+            self.log_output.append(f"- Total de arquivos .robot: {self.file_counter}")
+            self.log_output.append(f"- Total de Features extraídas: {self.feature_counter}")
 
             # Atualiza preview geral
             if self.all_features:
@@ -113,18 +121,36 @@ class MainWindow(QMainWindow):
                 preview_text = "Nenhum bloco de Feature encontrado nos arquivos."
             self.preview.setPlainText(preview_text)
 
-    def _process_file(self, full_path):
-        """Processa um único arquivo .robot"""
-        self.file_list.addItem(full_path)
-        try:
-            features = parse_robot_file(full_path)
-            if features:
-                self.all_features.extend(features)
-                self.log_output.append(f"[OK] Features extraídos de {full_path}")
-            else:
-                self.log_output.append(f"[WARN] Nenhum Feature encontrado em {full_path}")
-        except Exception as e:
-            self.log_output.append(f"[ERRO] Falha ao parsear {full_path}: {e}")
+    def _process_folder(self, folder, files):
+        """Processa todos os arquivos .robot de uma pasta"""
+        robot_files = [f for f in files if f.lower().endswith(".robot")]
+        if not robot_files:
+            return
+
+        self.folder_counter += 1
+        self.log_output.append(f"\n[INFO] Pasta analisada: {folder}")
+        self.log_output.append(f"       - Arquivos .robot encontrados: {len(robot_files)}")
+
+        folder_features_count = 0
+
+        for file in robot_files:
+            full_path = os.path.join(folder, file)
+            self.file_list.addItem(full_path)
+            self.file_counter += 1
+
+            try:
+                features = parse_robot_file(full_path)
+                if features:
+                    self.all_features.extend(features)
+                    folder_features_count += len(features)
+                    self.feature_counter += len(features)
+                    self.log_output.append(f"          > {file}: {len(features)} Feature(s)")
+                else:
+                    self.log_output.append(f"          > {file}: Nenhum Feature encontrado")
+            except Exception as e:
+                self.log_output.append(f"[ERRO] Falha ao parsear {full_path}: {e}")
+
+        self.log_output.append(f"       - Total de Features nesta pasta: {folder_features_count}")
 
     def show_preview(self, item):
         """Mostra Features de um arquivo específico no preview"""
@@ -146,7 +172,6 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Aviso", "Nenhum conteúdo para gerar .feature!")
             return
 
-        # Gera o arquivo consolidado
         output_path = os.path.join(self.folder, "combined.feature")
         try:
             with open(output_path, "w", encoding="utf-8") as f:
@@ -160,7 +185,7 @@ class MainWindow(QMainWindow):
                 subprocess.Popen(f'explorer /select,"{output_path}"')
             elif sys.platform == "darwin":
                 subprocess.Popen(["open", "-R", output_path])
-            else:  # Linux
+            else:
                 subprocess.Popen(["xdg-open", os.path.dirname(output_path)])
 
         except Exception as e:

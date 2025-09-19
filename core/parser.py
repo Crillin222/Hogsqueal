@@ -1,5 +1,3 @@
-import re
-
 def parse_robot_file(file_path):
     """
     Lê um arquivo .robot e extrai blocos de Feature que estão comentados.
@@ -17,31 +15,24 @@ def parse_robot_file(file_path):
 
             # Se a linha começa com "# Feature", iniciamos um novo bloco
             if stripped.lower().startswith("# feature"):
-                # Se já estávamos dentro de outro feature, salvamos ele
                 if current_feature:
                     features.append("\n".join(current_feature))
                     current_feature = []
-
                 inside_feature = True
-                # Adiciona a linha sem o "#" inicial
                 current_feature.append(stripped.lstrip("#").strip())
 
-            # Se já estamos dentro de um bloco de Feature
             elif inside_feature:
                 if stripped.startswith("#"):
-                    # Remove o "#" e adiciona ao bloco
                     current_feature.append(stripped.lstrip("#").strip())
                 elif stripped == "":
-                    # Linha em branco → mantém para espaçamento
                     current_feature.append("")
                 else:
-                    # Encontramos código normal (não comentado) → fechamos o bloco
                     if current_feature:
                         features.append("\n".join(current_feature))
                         current_feature = []
                     inside_feature = False
 
-        # Se o arquivo terminou enquanto ainda estávamos dentro de um Feature
+        # Fecha o último bloco caso o arquivo termine dentro de um Feature
         if current_feature:
             features.append("\n".join(current_feature))
 
