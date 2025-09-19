@@ -1,19 +1,20 @@
 def parse_robot_file(file_path):
     """
-    Lê um arquivo .robot e extrai blocos de Feature que estão comentados.
-    Cada Feature deve começar com '# Feature' e continuar até a próxima Feature ou fim do arquivo.
-    Retorna uma lista de strings, cada uma representando um Feature completo.
+    Lê um arquivo .robot e extrai Features comentadas.
+    Conta também quantos 'Scenario' existem.
+    Retorna (lista_de_features, total_scenarios).
     """
 
-    features = []         # Lista final de features encontrados
-    current_feature = []  # Acumulador temporário do feature atual
+    features = []
+    current_feature = []
     inside_feature = False
+    scenarios_count = 0
 
     with open(file_path, "r", encoding="utf-8") as f:
         for line in f:
             stripped = line.strip()
 
-            # Se a linha começa com "# Feature", iniciamos um novo bloco
+            # Novo Feature
             if stripped.lower().startswith("# feature"):
                 if current_feature:
                     features.append("\n".join(current_feature))
@@ -23,7 +24,12 @@ def parse_robot_file(file_path):
 
             elif inside_feature:
                 if stripped.startswith("#"):
-                    current_feature.append(stripped.lstrip("#").strip())
+                    text = stripped.lstrip("#").strip()
+                    current_feature.append(text)
+
+                    # Contagem de Scenario
+                    if text.lower().startswith("scenario"):
+                        scenarios_count += 1
                 elif stripped == "":
                     current_feature.append("")
                 else:
@@ -32,8 +38,7 @@ def parse_robot_file(file_path):
                         current_feature = []
                     inside_feature = False
 
-        # Fecha o último bloco caso o arquivo termine dentro de um Feature
         if current_feature:
             features.append("\n".join(current_feature))
 
-    return features
+    return features, scenarios_count
