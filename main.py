@@ -92,9 +92,11 @@ class MainWindow(QMainWindow):
             self.all_features.clear()
 
             # Reinicia contadores
-            self.files_count = 0
-            self.folders_count = 0
-            self.scenarios_count = 0
+            self.folder_count = 0
+            self.file_count = 0
+            self.feature_count = 0
+            self.scenario_count = 0
+
 
             self.log_output.append(f"[INFO] Pasta selecionada: {folder}")
 
@@ -102,12 +104,14 @@ class MainWindow(QMainWindow):
                 for root, dirs, files in os.walk(folder):
                     self.folders_count += 1
                     for file in files:
+                        self.file_count += 1
                         if file.lower().endswith(".robot"):
                             full_path = os.path.join(root, file)
                             self._process_file(full_path)
             else:
                 self.folders_count = 1
                 for file in os.listdir(folder):
+                    self.file_count += 1
                     if file.lower().endswith(".robot"):
                         full_path = os.path.join(folder, file)
                         self._process_file(full_path)
@@ -120,21 +124,28 @@ class MainWindow(QMainWindow):
             self.preview.setPlainText(preview_text)
 
             # Mostra resumo final no log
-            self.log_output.append(
-                f"[RESUMO] Pastas: {self.folders_count}, Arquivos: {self.files_count}, Cenários: {self.scenarios_count}"
-            )
+            self.log_output.append("\n[RESUMO FINAL]")
+            self.log_output.append(f"- Total de pastas analisadas: {self.folder_count}")
+            self.log_output.append(f"- Total de arquivos .robot: {self.file_count}")
+            self.log_output.append(f"- Total de Features extraídas: {self.feature_count}")
+            self.log_output.append(f"- Total de Cenários extraídos: {self.scenario_count}\n")
+
 
     def _process_file(self, full_path):
-        """Processa um arquivo individual"""
+        """Processa um único arquivo .robot"""
         self.file_list.addItem(full_path)
         try:
-            features, scenarios = parse_robot_file(full_path)
-            self.files_count += 1
-            self.scenarios_count += scenarios
+            features, stats = parse_robot_file(full_path)
 
             if features:
                 self.all_features.extend(features)
-                self.log_output.append(f"[OK] {len(features)} Features ({scenarios} Scenarios) de {full_path}")
+                self.feature_count += stats["features"]
+                self.scenario_count += stats["scenarios"]
+
+                self.log_output.append(
+                    f"[OK] {os.path.basename(full_path)} → "
+                    f"{stats['features']} Feature(s), {stats['scenarios']} Cenário(s)"
+                )
             else:
                 self.log_output.append(f"[WARN] Nenhum Feature encontrado em {full_path}")
 
