@@ -2,116 +2,155 @@ import sys
 import os
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QPushButton,
-    QFileDialog, QListWidget, QLabel, QMessageBox
+    QFileDialog, QListWidget, QTextEdit, QMessageBox, QSplitter, QCheckBox
 )
 from PySide6.QtCore import Qt
-
-
-def parse_robot_file(path):
-    """
-    Lê um arquivo .robot e extrai blocos comentados de Feature/Scenario.
-    Retorna uma lista de strings, cada uma representando uma Feature completa.
-    """
-    features = []
-    current_block = []
-
-    with open(path, "r", encoding="utf-8") as f:
-        for line in f:
-            stripped = line.strip()
-
-            # Considerar apenas linhas comentadas com "#"
-            if stripped.startswith("#"):
-                # Remove o "#" e espaços extras
-                uncommented = stripped.lstrip("#").strip()
-                if uncommented:  # ignora linhas só com "#"
-                    current_block.append(uncommented)
-            else:
-                # Linha não comentada -> fecha bloco atual se existir
-                if current_block:
-                    features.append("\n".join(current_block))
-                    current_block = []
-
-        # Se acabar o arquivo e ainda tiver um bloco em andamento
-        if current_block:
-            features.append("\n".join(current_block))
-
-    return features
+from core.parser import parse_robot_file
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Robot → Cucumber → Jira")
-        self.setGeometry(200, 200, 600, 400)
+        self.resize(800, 600)
 
-        # --- Widget central e layout ---
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        layout = QVBoxLayout(central_widget)
+        self.dark_mode = True  # Tema inicial
+        self.include_subfolders = False  # Configuração inicial
+        self.folder = None  # Pasta selecionada
+        self.all_features = []  # Onde guardamos todos os cucumbers encontrados
 
-        # --- Label de instrução ---
-        self.label = QLabel("Selecione a pasta com arquivos .robot")
-        self.label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(self.label)
+        # Layout principal
+        layout = QVBoxLayout()
 
-        # --- Botão para selecionar pasta ---
-        self.btn_select_folder = QPushButton("Selecionar Pasta")
-        self.btn_select_folder.clicked.connect(self.select_folder)
-        layout.addWidget(self.btn_select_folder)
+        # Checkbox para incluir subpastas
+        self.subfolders_checkbox = QCheckBox("Incluir subpastas")
+        self.subfolders_checkbox.stateChanged.connect(self.toggle_subfolders)
+        layout.addWidget(self.subfolders_checkbox)
 
-        # --- Lista de arquivos .robot ---
-        self.list_files = QListWidget()
-        layout.addWidget(self.list_files)
+        # Botão para selecionar pasta
+        self.folder_button = QPushButton("Selecionar Pasta")
+        self.folder_button.clicked.connect(self.select_folder)
+        layout.addWidget(self.folder_button)
 
-        # --- Botão para gerar .feature ---
-        self.btn_process = QPushButton("Gerar .feature do arquivo selecionado")
-        self.btn_process.clicked.connect(self.generate_feature)
-        layout.addWidget(self.btn_process)
+        # Splitter para lista de arquivos e preview
+        splitter = QSplitter(Qt.Horizontal)
 
-        # --- Variável para guardar a pasta atual ---
-        self.current_folder = None
+        # Lista de arquivos .robot
+        self.file_list = QListWidget()
+        splitter.addWidget(self.file_list)
+
+        # Preview
+        self.preview = QTextEdit()
+        self.preview.setReadOnly(True)
+        splitter.addWidget(self.preview)
+
+        splitter.setSizes([200, 600])
+        layout.addWidget(splitter)
+
+        # Botão para gerar .feature consolidado
+        self.generate_button = QPushButton("Gerar Único .feature")
+        self.generate_button.clicked.connect(self.generate_feature)
+        layout.addWidget(self.generate_button)
+
+        # Botão para trocar tema
+        self.theme_button = QPushButton("Trocar Tema (Claro/Escuro)")
+        self.theme_button.clicked.connect(self.toggle_theme)
+        layout.addWidget(self.theme_button)
+
+        # Widget central
+        container = QWidget()
+        container.setLayout(layout)
+        self.setCentralWidget(container)
+
+        # Aplica tema inicial
+        self.apply_theme()
+
+    def toggle_subfolders(self, state):
+        """Atualiza configuração de incluir/excluir subpastas"""
+        self.include_subfolders = state == Qt.Checked
 
     def select_folder(self):
-        """Seleciona a pasta e lista os arquivos .robot nela."""
-        folder = QFileDialog.getExistingDirectory(self, "Selecione a pasta")
+        """Abre seletor de pasta e lista arquivos .robot encontrados"""
+        folder = QFileDialog.getExistingDirectory(self, "Selecione a pasta com arquivos .robot")
         if folder:
-            self.current_folder = folder
-            self.list_files.clear()
-            for file in os.listdir(folder):
-                if file.endswith(".robot"):
-                    self.list_files.addItem(file)
-            self.label.setText(f"Pasta selecionada: {folder}")
+            self.file_list.clear()
+            self.folder = folder
+            self.all_features.clear()  # reseta lista global
+
+            if self.include_subfolders:
+                # Busca recursiva (inclui subpastas)
+                for root, dirs, files in os.walk(folder):
+                    for file in files:
+                        if file.endswith(".robot"):
+                            full_path = os.path.join(root, file)
+                            self.file_list.addItem(full_path)
+                            self.all_features.extend(parse_robot_file(full_path))
+            else:
+                # Apenas na pasta raiz
+                for file in os.listdir(folder):
+                    if file.endswith(".robot"):
+                        full_path = os.path.join(folder, file)
+                        self.file_list.addItem(full_path)
+                        self.all_features.extend(parse_robot_file(full_path))
+
+            # Atualiza preview geral (todas as features encontradas)
+            if self.all_features:
+                preview_text = "\n\n---\n\n".join(self.all_features)
+            else:
+                preview_text = "Nenhum bloco de Feature encontrado nos arquivos."
+            self.preview.setPlainText(preview_text)
 
     def generate_feature(self):
-        """Gera um arquivo .feature a partir do .robot selecionado."""
-        selected_items = self.list_files.selectedItems()
-        if not selected_items:
-            QMessageBox.warning(self, "Aviso", "Selecione um arquivo .robot na lista.")
+        """Gera um único arquivo .feature consolidado"""
+        if not self.folder:
+            QMessageBox.warning(self, "Aviso", "Nenhuma pasta selecionada!")
             return
 
-        # Nome do arquivo selecionado
-        file_name = selected_items[0].text()
-        robot_path = os.path.join(self.current_folder, file_name)
-
-        # Parser do arquivo
-        features = parse_robot_file(robot_path)
-        if not features:
-            QMessageBox.information(self, "Resultado", "Nenhuma Feature encontrada no arquivo.")
+        if not self.all_features:
+            QMessageBox.warning(self, "Aviso", "Nenhum cucumber encontrado!")
             return
 
-        # Junta todas as features em um único texto
-        feature_content = "\n\n".join(features)
+        # Conteúdo final
+        feature_content = "\n\n".join(self.all_features)
 
-        # Salva como .feature na mesma pasta
-        feature_path = robot_path.replace(".robot", ".feature")
-        with open(feature_path, "w", encoding="utf-8") as f:
-            f.write(feature_content)
+        # Caminho do arquivo .feature
+        output_path = os.path.join(self.folder, "tests.feature")
 
-        QMessageBox.information(self, "Sucesso", f"Arquivo .feature gerado:\n{feature_path}")
+        try:
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(feature_content)
+
+            QMessageBox.information(
+                self, "Sucesso",
+                f"Arquivo consolidado gerado:\n{output_path}"
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Erro", f"Não foi possível salvar o arquivo:\n{e}")
+
+    def toggle_theme(self):
+        """Alterna entre tema claro e escuro"""
+        self.dark_mode = not self.dark_mode
+        self.apply_theme()
+
+    def apply_theme(self):
+        """Aplica stylesheet baseado no tema"""
+        if self.dark_mode:
+            self.setStyleSheet("""
+                QMainWindow { background-color: #121212; color: #ffffff; }
+                QPushButton { background-color: #333333; color: #ffffff; border-radius: 5px; padding: 5px; }
+                QPushButton:hover { background-color: #444444; }
+                QListWidget, QTextEdit { background-color: #1e1e1e; color: #ffffff; }
+            """)
+        else:
+            self.setStyleSheet("")  # volta para tema padrão (claro)
 
 
-if __name__ == "__main__":
+def main():
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()
