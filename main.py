@@ -75,18 +75,22 @@ class MainWindow(QMainWindow):
 
         layout.addLayout(header)
 
-        # --- Conteúdo principal: Splitter (lista de arquivos e preview) ---
-        splitter = QSplitter(Qt.Horizontal)
+    # --- Conteúdo principal: Splitter (lista de arquivos e preview) ---
+        self.splitter = QSplitter(Qt.Horizontal)
+        self.splitter.setObjectName("mainSplitter")
+        self.splitter.setHandleWidth(8)  # confortável para arrastar
+
         self.file_list = QListWidget()
         self.file_list.itemClicked.connect(self.show_preview)
-        splitter.addWidget(self.file_list)
+        self.splitter.addWidget(self.file_list)
 
         self.preview = QTextEdit()
         self.preview.setReadOnly(True)
-        splitter.addWidget(self.preview)
+        self.splitter.addWidget(self.preview)
 
-        splitter.setSizes([250, 650])
-        layout.addWidget(splitter, 3)  # dá mais peso ao splitter
+        self.splitter.setSizes([250, 650])
+        layout.addWidget(self.splitter, 3)
+
 
         # Logs
         layout.addWidget(QLabel("Log do sistema:"), 0)
@@ -259,7 +263,7 @@ class MainWindow(QMainWindow):
 
 
     def apply_theme(self):
-        """Aplica o tema (inclui estilos do header e do rodapé)"""
+        """Aplica o tema (inclui estilos do header, rodapé e do handle do QSplitter)"""
         if self.dark_mode:
             style = """
                 QMainWindow { background-color: #121212; color: #ffffff; }
@@ -274,13 +278,14 @@ class MainWindow(QMainWindow):
                 }
                 QPushButton:hover { background-color: #444444; }
 
+                /* Áreas de conteúdo */
                 QListWidget, QTextEdit {
                     background-color: #1e1e1e;
                     color: #ffffff;
                     border: 1px solid #2a2a2a;
                 }
 
-                /* Botão toggle 'Incluir subpastas' */
+                /* Toggle 'Incluir subpastas' */
                 QPushButton#btnSubfolders {
                     background: #2c2c2c;
                     border: 1px solid #4a4a4a;
@@ -308,8 +313,26 @@ class MainWindow(QMainWindow):
                     background-color: #121212;
                     border-top: 1px solid #2a2a2a;
                 }
-                QLabel#lblSummary {
-                    color: #aaaaaa;
+                QLabel#lblSummary { color: #aaaaaa; }
+
+                /* ===== QSplitter: handle (a "divisão" entre os panes) ===== */
+                QSplitter#mainSplitter::handle {
+                    background-color: #1b1b1b;      /* remove o "branco" no dark */
+                    border: none;
+                    margin: 0;
+                }
+                QSplitter#mainSplitter::handle:horizontal {
+                    width: 8px;                      /* combine com setHandleWidth(8) */
+                    border-left: 1px solid rgba(255,255,255,0.06);  /* linha sutil */
+                    background-clip: padding;
+                }
+                QSplitter#mainSplitter::handle:horizontal:hover {
+                    background-color: #252525;
+                    border-left-color: rgba(255,255,255,0.14);
+                }
+                QSplitter#mainSplitter::handle:horizontal:pressed {
+                    background-color: #2a2a2a;
+                    border-left-color: rgba(255,255,255,0.18);
                 }
             """
         else:
@@ -332,7 +355,6 @@ class MainWindow(QMainWindow):
                     border: 1px solid #dcdcdc;
                 }
 
-                /* Botão toggle 'Incluir subpastas' */
                 QPushButton#btnSubfolders {
                     background: #f6f6f6;
                     border: 1px solid #bdbdbd;
@@ -346,7 +368,6 @@ class MainWindow(QMainWindow):
                 }
                 QPushButton#btnSubfolders:checked:hover { background: #2f8b4f; }
 
-                /* Botão do tema (ícone) */
                 QToolButton#btnTheme {
                     border: none;
                     padding: 4px;
@@ -355,17 +376,39 @@ class MainWindow(QMainWindow):
                 }
                 QToolButton#btnTheme:hover { background: rgba(0,0,0,0.08); }
 
-                /* Rodapé */
                 QFrame#footerBar {
                     background-color: #f7f7f7;
                     border-top: 1px solid #dcdcdc;
                 }
-                QLabel#lblSummary {
-                    color: #555555;
+                QLabel#lblSummary { color: #555555; }
+
+                /* ===== QSplitter: handle ===== */
+                QSplitter#mainSplitter::handle {
+                    background-color: rgba(0,0,0,0.04);
+                    border: none;
+                    margin: 0;
+                }
+                QSplitter#mainSplitter::handle:horizontal {
+                    width: 8px;
+                    border-left: 1px solid #dcdcdc;
+                    background-clip: padding;
+                }
+                QSplitter#mainSplitter::handle:horizontal:hover {
+                    background-color: rgba(0,0,0,0.08);
+                    border-left-color: #c8c8c8;
+                }
+                QSplitter#mainSplitter::handle:horizontal:pressed {
+                    background-color: rgba(0,0,0,0.10);
+                    border-left-color: #bdbdbd;
                 }
             """
+
+        # ✅ Estas três linhas ficam FORA do if/else:
         self.setStyleSheet(style)
         self._update_theme_icon()
+        if hasattr(self, "splitter"):
+            self.splitter.update()
+
 
 
 def main():
