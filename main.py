@@ -1,13 +1,19 @@
 import sys
 import os
 import subprocess
+import resources_rc
+
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QPushButton,
-    QFileDialog, QListWidget, QTextEdit, QMessageBox, QSplitter, QCheckBox, QLabel
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QPushButton, QFileDialog, QListWidget, QTextEdit, QMessageBox,
+    QSplitter, QLabel, QToolButton, QFrame
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSize
+# from PySide6.QtGui import QIcon  # habilite se for usar SVG via .qrc
+
 from core.parser import parse_robot_file
 
+from PySide6.QtGui import QIcon
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -19,27 +25,57 @@ class MainWindow(QMainWindow):
         self.dark_mode = True
         self.include_subfolders = False
         self.folder = None
-        self.all_features = []  
+        self.all_features = []
 
-        # Contadores globais
-        self.files_count = 0
-        self.folders_count = 0
-        self.scenarios_count = 0
+        # Contadores
+        self.folder_count = 0
+        self.file_count = 0
+        self.feature_count = 0
+        self.scenario_count = 0
 
         # ---------- Layout principal ----------
         layout = QVBoxLayout()
 
-        # Checkbox de subpastas
-        self.subfolders_checkbox = QCheckBox("Incluir subpastas")
-        self.subfolders_checkbox.stateChanged.connect(self.toggle_subfolders)
-        layout.addWidget(self.subfolders_checkbox)
+        # --- Header (linha superior) ---
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(8)
 
-        # Botão para selecionar pasta
+        # Botão para selecionar pasta (à esquerda)
         self.folder_button = QPushButton("Selecionar Pasta")
         self.folder_button.clicked.connect(self.select_folder)
-        layout.addWidget(self.folder_button)
+        header.addWidget(self.folder_button)
 
-        # Splitter: lista de arquivos e preview
+        # "Checkbox" de subpastas → botão toggle (destacado quando ligado)
+        self.subfolders_checkbox = QPushButton("Incluir subpastas")
+        self.subfolders_checkbox.setObjectName("btnSubfolders")
+        self.subfolders_checkbox.setCheckable(True)
+        self.subfolders_checkbox.setChecked(self.include_subfolders)
+        self.subfolders_checkbox.setToolTip("Alternar inclusão de subpastas")
+        self.subfolders_checkbox.toggled.connect(
+            lambda checked: self.toggle_subfolders(Qt.Checked if checked else Qt.Unchecked)
+        )
+        header.addWidget(self.subfolders_checkbox)
+
+        # Empurra o tema para a direita
+        header.addStretch()
+
+        # Botão de tema no canto superior direito (ícone apenas)
+        self.theme_button = QToolButton(self)
+        self.theme_button.setObjectName("btnTheme")
+        self.theme_button.setToolTip("Alternar tema")
+        self.theme_button.setAutoRaise(True)
+        self.theme_button.setToolButtonStyle(Qt.ToolButtonIconOnly)
+        self.theme_button.setIconSize(QSize(20, 20))
+        # Ícone inicial com emoji (trocaremos por SVG se quiser)
+        self.theme_button.setIcon(QIcon(":/icons/sun.svg") if self.dark_mode else QIcon(":/icons/moon.svg"))
+        self.theme_button.setText("")  # sem texto
+        self.theme_button.clicked.connect(self.toggle_theme)
+        header.addWidget(self.theme_button)
+
+        layout.addLayout(header)
+
+        # --- Conteúdo principal: Splitter (lista de arquivos e preview) ---
         splitter = QSplitter(Qt.Horizontal)
         self.file_list = QListWidget()
         self.file_list.itemClicked.connect(self.show_preview)
@@ -50,38 +86,55 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self.preview)
 
         splitter.setSizes([250, 650])
-        layout.addWidget(splitter)
+        layout.addWidget(splitter, 3)  # dá mais peso ao splitter
 
-        # Botão de gerar feature
-        self.generate_button = QPushButton("Gerar .feature")
-        self.generate_button.clicked.connect(self.generate_feature)
-        layout.addWidget(self.generate_button)
-
-        # Botão de tema
-        self.theme_button = QPushButton("Trocar Tema (Claro/Escuro)")
-        self.theme_button.clicked.connect(self.toggle_theme)
-        layout.addWidget(self.theme_button)
-
-        # Caixa de log
+        # Logs
+        layout.addWidget(QLabel("Log do sistema:"), 0)
         self.log_output = QTextEdit()
         self.log_output.setReadOnly(True)
         self.log_output.setPlaceholderText("Logs do sistema aparecerão aqui...")
-        layout.addWidget(QLabel("Log do sistema:"))
-        layout.addWidget(self.log_output)
+        layout.addWidget(self.log_output, 1)  # expande com a janela
+
+        # --- Rodapé fixo (sumário + Gerar .feature) ---
+        self.footer = QFrame()
+        self.footer.setObjectName("footerBar")
+        footer_layout = QHBoxLayout(self.footer)
+        footer_layout.setContentsMargins(12, 6, 12, 6)
+        footer_layout.setSpacing(8)
+
+        self.lblSummary = QLabel()
+        self.lblSummary.setObjectName("lblSummary")
+        footer_layout.addWidget(self.lblSummary)
+
+        footer_layout.addStretch()
+
+        self.generate_button = QPushButton("Gerar .feature")
+        self.generate_button.clicked.connect(self.generate_feature)
+        footer_layout.addWidget(self.generate_button)
+
+        layout.addWidget(self.footer, 0)
 
         container = QWidget()
         container.setLayout(layout)
         self.setCentralWidget(container)
 
+        # Tema + sumário inicial
         self.apply_theme()
+        self._update_summary()
 
     # --------- Funções ---------
 
+    def _update_summary(self):
+        """Atualiza o texto de sumário no rodapé."""
+        self.lblSummary.setText(
+            f"Pastas: {self.folder_count} • Arquivos: {self.file_count} • "
+            f"Features: {self.feature_count} • Cenários: {self.scenario_count}"
+        )
+
     def toggle_subfolders(self, state: int):
         """Ativa/desativa a inclusão de subpastas"""
-        self.include_subfolders = (state == 2)  # 2 significa "Checked"
+        self.include_subfolders = (state == Qt.Checked)  # 2 significa "Checked"
         self.log_output.append(f"[INFO] Incluir subpastas: {self.include_subfolders}")
-
 
     def select_folder(self):
         """Seleciona pasta raiz e busca arquivos"""
@@ -96,20 +149,21 @@ class MainWindow(QMainWindow):
             self.file_count = 0
             self.feature_count = 0
             self.scenario_count = 0
-
+            self._update_summary()
 
             self.log_output.append(f"[INFO] Pasta selecionada: {folder}")
 
             if self.include_subfolders:
                 for root, dirs, files in os.walk(folder):
-                    self.folders_count += 1
+                    self.folder_count += 1
                     for file in files:
                         self.file_count += 1
                         if file.lower().endswith(".robot"):
                             full_path = os.path.join(root, file)
                             self._process_file(full_path)
             else:
-                self.folders_count = 1
+                # Considera apenas a raiz como 1 pasta analisada
+                self.folder_count = 1
                 for file in os.listdir(folder):
                     self.file_count += 1
                     if file.lower().endswith(".robot"):
@@ -130,6 +184,8 @@ class MainWindow(QMainWindow):
             self.log_output.append(f"- Total de Features extraídas: {self.feature_count}")
             self.log_output.append(f"- Total de Cenários extraídos: {self.scenario_count}\n")
 
+            # Atualiza o sumário do rodapé
+            self._update_summary()
 
     def _process_file(self, full_path):
         """Processa um único arquivo .robot"""
@@ -170,7 +226,6 @@ class MainWindow(QMainWindow):
         if not self.all_features:
             QMessageBox.warning(self, "Aviso", "Nenhum conteúdo para gerar .feature!")
             return
-
         output_path = os.path.join(self.folder, "combined.feature")
         try:
             with open(output_path, "w", encoding="utf-8") as f:
@@ -194,20 +249,123 @@ class MainWindow(QMainWindow):
     def toggle_theme(self):
         """Troca tema claro/escuro"""
         self.dark_mode = not self.dark_mode
-        self.apply_theme()
+        self.apply_theme()           # aplica paleta/estilo
+        self._update_theme_icon()    # atualiza ícone (sol/lua)
+
+    def _update_theme_icon(self):
+        if isinstance(self.theme_button, QToolButton):
+            self.theme_button.setIcon(QIcon(":/icons/sun.svg") if self.dark_mode else QIcon(":/icons/moon.svg"))
+            self.theme_button.setText("")
+
 
     def apply_theme(self):
-        """Aplica o tema"""
+        """Aplica o tema (inclui estilos do header e do rodapé)"""
         if self.dark_mode:
-            self.setStyleSheet("""
+            style = """
                 QMainWindow { background-color: #121212; color: #ffffff; }
-                QPushButton { background-color: #333333; color: #ffffff; border-radius: 5px; padding: 5px; }
+                QLabel { color: #ffffff; }
+
+                QPushButton {
+                    background-color: #333333;
+                    color: #ffffff;
+                    border-radius: 6px;
+                    padding: 6px 10px;
+                    border: 1px solid #4a4a4a;
+                }
                 QPushButton:hover { background-color: #444444; }
-                QCheckBox { color: #ffffff; }
-                QListWidget, QTextEdit { background-color: #1e1e1e; color: #ffffff; }
-            """)
+
+                QListWidget, QTextEdit {
+                    background-color: #1e1e1e;
+                    color: #ffffff;
+                    border: 1px solid #2a2a2a;
+                }
+
+                /* Botão toggle 'Incluir subpastas' */
+                QPushButton#btnSubfolders {
+                    background: #2c2c2c;
+                    border: 1px solid #4a4a4a;
+                    color: #ffffff;
+                }
+                QPushButton#btnSubfolders:hover { background: #3a3a3a; }
+                QPushButton#btnSubfolders:checked {
+                    background: #2d7d46;
+                    color: #ffffff;
+                    border-color: #2d7d46;
+                }
+                QPushButton#btnSubfolders:checked:hover { background: #2f8b4f; }
+
+                /* Botão do tema (ícone) */
+                QToolButton#btnTheme {
+                    border: none;
+                    padding: 4px;
+                    margin: 2px;
+                    border-radius: 6px;
+                }
+                QToolButton#btnTheme:hover { background: rgba(255,255,255,0.08); }
+
+                /* Rodapé */
+                QFrame#footerBar {
+                    background-color: #121212;
+                    border-top: 1px solid #2a2a2a;
+                }
+                QLabel#lblSummary {
+                    color: #aaaaaa;
+                }
+            """
         else:
-            self.setStyleSheet("")
+            style = """
+                QMainWindow { background-color: #f7f7f7; color: #222222; }
+                QLabel { color: #222222; }
+
+                QPushButton {
+                    background-color: #ffffff;
+                    color: #222222;
+                    border-radius: 6px;
+                    padding: 6px 10px;
+                    border: 1px solid #bdbdbd;
+                }
+                QPushButton:hover { background-color: #f0f0f0; }
+
+                QListWidget, QTextEdit {
+                    background-color: #ffffff;
+                    color: #222222;
+                    border: 1px solid #dcdcdc;
+                }
+
+                /* Botão toggle 'Incluir subpastas' */
+                QPushButton#btnSubfolders {
+                    background: #f6f6f6;
+                    border: 1px solid #bdbdbd;
+                    color: #333333;
+                }
+                QPushButton#btnSubfolders:hover { background: #eeeeee; }
+                QPushButton#btnSubfolders:checked {
+                    background: #2d7d46;
+                    color: #ffffff;
+                    border-color: #2d7d46;
+                }
+                QPushButton#btnSubfolders:checked:hover { background: #2f8b4f; }
+
+                /* Botão do tema (ícone) */
+                QToolButton#btnTheme {
+                    border: none;
+                    padding: 4px;
+                    margin: 2px;
+                    border-radius: 6px;
+                }
+                QToolButton#btnTheme:hover { background: rgba(0,0,0,0.08); }
+
+                /* Rodapé */
+                QFrame#footerBar {
+                    background-color: #f7f7f7;
+                    border-top: 1px solid #dcdcdc;
+                }
+                QLabel#lblSummary {
+                    color: #555555;
+                }
+            """
+        self.setStyleSheet(style)
+        self._update_theme_icon()
 
 
 def main():
