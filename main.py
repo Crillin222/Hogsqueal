@@ -523,7 +523,9 @@ class MainWindow(QMainWindow):
 
             # Abre no explorador
             if sys.platform == "win32":
-                subprocess.Popen(f'explorer /select,"{output_path}"')
+                # Garante que o path está com barras invertidas
+                output_path_win = os.path.normpath(output_path)
+                subprocess.Popen(f'explorer /select,"{output_path_win}"')
             elif sys.platform == "darwin":
                 subprocess.Popen(["open", "-R", output_path])
             else:
