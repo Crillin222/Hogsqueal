@@ -3,7 +3,7 @@ import sys
 import subprocess
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit, QListWidget,
-    QTextEdit, QSplitter, QLabel, QFrame, QMessageBox
+    QTextEdit, QSplitter, QLabel, QFrame, QMessageBox, QFileDialog
 )
 from PySide6.QtCore import Qt
 from core.parser import parse_robot_file
@@ -55,7 +55,7 @@ class FeatureCreatorPage(QWidget):
 
         self.project_input = QLineEdit()
         self.project_input.setPlaceholderText("Project (@KEYDOTESTE)")
-        self.project_input.setText("@PROJECTKEY")
+        self.project_input.setText("@PBC14TEST")
         self.project_input.textChanged.connect(self._on_project_changed)
         header.addWidget(self.project_input)
 

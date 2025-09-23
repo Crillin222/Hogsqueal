@@ -3,10 +3,10 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget, QToolButton
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QIcon
 
+import resources_rc
 from pages.feature_creator import FeatureCreatorPage
 from pages.xray_test import XrayTestPage
 from core.theme import apply_theme
-import resources_rc
 
 resources_rc.qInitResources()
 

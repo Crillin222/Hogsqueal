@@ -145,7 +145,7 @@ class XrayTestPage(QWidget):
             auth = f'-H "Authorization: Bearer {token}"'
 
         feature_file = self.feature_file_path.text()
-        url = "https://your-jira/rest/raven/2.0/import/feature"
+        url = "https:///jerry.dieboldnixdorf.com/rest/raven/2.0/import/feature"
         cmd = f'curl -X POST {auth} -F "file=@{feature_file}" "{url}"'
 
         self.xray_log.append(f"[CMD] {cmd}")

@@ -1,6 +1,7 @@
 <RCC>
-  <qresource prefix="/icons">
+  <qresource prefix="/">
     <file>icons/sun.svg</file>
     <file>icons/moon.svg</file>
+    <file>dummy/dummy.feature</file>
   </qresource>
 </RCC>
