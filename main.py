@@ -2,6 +2,7 @@ import sys
 import os
 import subprocess
 import resources_rc
+import json
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -13,6 +14,8 @@ from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QIcon
 
 from core.parser import parse_robot_file
+
+LOGIN_CONFIG_PATH = "login_config.json"
 
 class FeatureCreatorPage(QWidget):
     def __init__(self, parent):
@@ -136,6 +139,7 @@ class XrayTestPage(QWidget):
         super().__init__()
         self.parent = parent
         self.init_ui()
+        self.load_login_config()  # Carrega ao iniciar
 
     def init_ui(self):
         layout = QVBoxLayout()
@@ -221,7 +225,38 @@ class XrayTestPage(QWidget):
         if file_path:
             self.feature_file_path.setText(file_path)
 
+    def save_login_config(self):
+        config = {
+            "login_type": "userpass" if self.radio_userpass.isChecked() else "token",
+            "user": self.user_field.text() if self.radio_userpass.isChecked() else "",
+            "token": self.token_field.text() if self.radio_token.isChecked() else ""
+        }
+        try:
+            with open(LOGIN_CONFIG_PATH, "w", encoding="utf-8") as f:
+                json.dump(config, f)
+        except Exception as e:
+            # Opcional: logar erro
+            pass
+
+    def load_login_config(self):
+        try:
+            with open(LOGIN_CONFIG_PATH, "r", encoding="utf-8") as f:
+                config = json.load(f)
+            if config.get("login_type") == "userpass":
+                self.radio_userpass.setChecked(True)
+                self.user_field.setText(config.get("user", ""))
+                self.token_field.setText("")
+            else:
+                self.radio_token.setChecked(True)
+                self.token_field.setText(config.get("token", ""))
+                self.user_field.setText("")
+        except Exception:
+            pass  # Se não existir, ignora
+
     def create_xray_test(self):
+        # Salva o login/tipo antes de executar
+        self.save_login_config()
+
         # Validação
         if not self.feature_file_path.text():
             QMessageBox.warning(self, "Aviso", "Selecione um arquivo .feature para criar o teste.")
