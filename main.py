@@ -155,22 +155,39 @@ class XrayTestPage(QWidget):
         self.login_method_group.addButton(self.radio_userpass)
         self.login_method_group.addButton(self.radio_token)
 
-        # Campos de usuário/senha/token
+        # Campos de usuário/senha/token em um QStackedWidget
+        self.login_stack = QStackedWidget()
+
+        # Página 0: Usuário e Senha
+        userpass_widget = QWidget()
+        userpass_layout = QVBoxLayout(userpass_widget)
         self.user_field = QLineEdit()
         self.user_field.setPlaceholderText("Usuário Jira")
         self.pass_field = QLineEdit()
         self.pass_field.setPlaceholderText("Senha Jira")
         self.pass_field.setEchoMode(QLineEdit.Password)
+        userpass_layout.addWidget(self.user_field)
+        userpass_layout.addWidget(self.pass_field)
+        self.login_stack.addWidget(userpass_widget)
+
+        # Página 1: Token
+        token_widget = QWidget()
+        token_layout = QVBoxLayout(token_widget)
         self.token_field = QLineEdit()
         self.token_field.setPlaceholderText("Token Jira")
+        token_layout.addWidget(self.token_field)
+        self.login_stack.addWidget(token_widget)
 
-        login_layout.addWidget(self.user_field)
-        login_layout.addWidget(self.pass_field)
-        login_layout.addWidget(self.token_field)
+        login_layout.addWidget(self.login_stack)
 
-        # Alterna campos conforme método de login
-        self.radio_userpass.toggled.connect(self.update_login_fields)
-        self.update_login_fields()
+        # Alterna páginas do stack conforme seleção
+        self.radio_userpass.toggled.connect(
+            lambda checked: self.login_stack.setCurrentIndex(0 if checked else 1)
+        )
+        self.radio_token.toggled.connect(
+            lambda checked: self.login_stack.setCurrentIndex(1 if checked else 0)
+        )
+        self.login_stack.setCurrentIndex(0)
 
         layout.addWidget(login_group)
 
@@ -198,16 +215,6 @@ class XrayTestPage(QWidget):
         layout.addWidget(self.xray_log, 1)
 
         self.setLayout(layout)
-
-    def update_login_fields(self):
-        if self.radio_userpass.isChecked():
-            self.user_field.setEnabled(True)
-            self.pass_field.setEnabled(True)
-            self.token_field.setEnabled(False)
-        else:
-            self.user_field.setEnabled(False)
-            self.pass_field.setEnabled(False)
-            self.token_field.setEnabled(True)
 
     def select_feature_file(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Selecione o arquivo .feature", "", "Feature Files (*.feature)")
