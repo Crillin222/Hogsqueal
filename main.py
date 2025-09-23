@@ -6,7 +6,7 @@ import resources_rc
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QFileDialog, QListWidget, QTextEdit, QMessageBox,
-    QSplitter, QLabel, QToolButton, QFrame
+    QSplitter, QLabel, QToolButton, QFrame, QLineEdit
 )
 from PySide6.QtCore import Qt, QSize
 # from PySide6.QtGui import QIcon  # habilite se for usar SVG via .qrc
@@ -33,6 +33,10 @@ class MainWindow(QMainWindow):
         self.feature_count = 0
         self.scenario_count = 0
 
+        # Chave do projeto e tags para Jira
+        self.project_key = ""
+        self.tags = ""
+
         # ---------- Layout principal ----------
         layout = QVBoxLayout()
 
@@ -56,6 +60,17 @@ class MainWindow(QMainWindow):
             lambda checked: self.toggle_subfolders(Qt.Checked if checked else Qt.Unchecked)
         )
         header.addWidget(self.subfolders_checkbox)
+
+        # --- Novos campos no header ---
+        self.project_input = QLineEdit()
+        self.project_input.setPlaceholderText("Projeto (@KEYDOTESTE)")
+        self.project_input.textChanged.connect(self._on_project_changed)
+        header.addWidget(self.project_input)
+
+        self.tags_input = QLineEdit()
+        self.tags_input.setPlaceholderText("Tags (@tag1 @tag2)")
+        self.tags_input.textChanged.connect(self._on_tags_changed)
+        header.addWidget(self.tags_input)
 
         # Empurra o tema para a direita
         header.addStretch()
@@ -82,7 +97,15 @@ class MainWindow(QMainWindow):
 
         self.file_list = QListWidget()
         self.file_list.itemClicked.connect(self.show_preview)
+        self.file_list.setSelectionMode(QListWidget.SingleSelection)
         self.splitter.addWidget(self.file_list)
+
+        # --- Botão para voltar à visualização geral ---
+        self.back_button = QPushButton("Visualização Geral")
+        self.back_button.setToolTip("Voltar para a visualização do arquivo .feature final")
+        self.back_button.clicked.connect(self.show_overall_preview)
+        self.back_button.setVisible(False)  # Só aparece quando um arquivo está selecionado
+        layout.addWidget(self.back_button)
 
         self.preview = QTextEdit()
         self.preview.setReadOnly(True)
@@ -116,6 +139,12 @@ class MainWindow(QMainWindow):
         self.generate_button.clicked.connect(self.generate_feature)
         footer_layout.addWidget(self.generate_button)
 
+        # --- Botão de Reset ---
+        self.reset_button = QPushButton("Resetar")
+        self.reset_button.setToolTip("Limpa tudo e volta ao estado inicial")
+        self.reset_button.clicked.connect(self.reset_all)
+        footer_layout.addWidget(self.reset_button)
+
         layout.addWidget(self.footer, 0)
 
         container = QWidget()
@@ -140,6 +169,23 @@ class MainWindow(QMainWindow):
         self.include_subfolders = (state == Qt.Checked)  # 2 significa "Checked"
         self.log_output.append(f"[INFO] Incluir subpastas: {self.include_subfolders}")
 
+    def _apply_project_and_tags(self, features):
+        """Adiciona o projeto e tags nas features para preview e geração de arquivo."""
+        features_with_project_and_tags = []
+        for feature in features:
+            lines = feature.splitlines()
+            new_lines = []
+            # Adiciona o projeto acima do Feature
+            if self.project_key:
+                new_lines.append(self.project_key)
+            for line in lines:
+                # Adiciona tags acima de cada Scenario
+                if line.strip().lower().startswith("scenario") and self.tags:
+                    new_lines.append(self.tags)
+                new_lines.append(line)
+            features_with_project_and_tags.append("\n".join(new_lines))
+        return features_with_project_and_tags
+
     def select_folder(self):
         """Seleciona pasta raiz e busca arquivos"""
         folder = QFileDialog.getExistingDirectory(self, "Selecione a pasta com arquivos .robot")
@@ -147,6 +193,7 @@ class MainWindow(QMainWindow):
             self.file_list.clear()
             self.folder = folder
             self.all_features.clear()
+            self.back_button.setVisible(False)
 
             # Reinicia contadores
             self.folder_count = 0
@@ -166,7 +213,6 @@ class MainWindow(QMainWindow):
                             full_path = os.path.join(root, file)
                             self._process_file(full_path)
             else:
-                # Considera apenas a raiz como 1 pasta analisada
                 self.folder_count = 1
                 for file in os.listdir(folder):
                     self.file_count += 1
@@ -174,9 +220,9 @@ class MainWindow(QMainWindow):
                         full_path = os.path.join(folder, file)
                         self._process_file(full_path)
 
-            # Atualiza preview geral
+            # Atualiza preview geral (agora com tags e projeto)
             if self.all_features:
-                preview_text = "\n\n---\n\n".join(self.all_features)
+                preview_text = "\n\n---\n\n".join(self._apply_project_and_tags(self.all_features))
             else:
                 preview_text = "Nenhum bloco de Feature encontrado nos arquivos."
             self.preview.setPlainText(preview_text)
@@ -218,22 +264,77 @@ class MainWindow(QMainWindow):
         try:
             features, _ = parse_robot_file(file_path)
             if features:
-                preview_text = "\n\n---\n\n".join(features)
+                preview_text = "\n\n---\n\n".join(self._apply_project_and_tags(features))
             else:
                 preview_text = "Nenhum bloco de Feature encontrado neste arquivo."
         except Exception as e:
             preview_text = f"[ERRO] Falha ao parsear {file_path}: {e}"
         self.preview.setPlainText(preview_text)
+        self.back_button.setVisible(True)
+
+    def show_overall_preview(self):
+        """Mostra a visualização geral do arquivo .feature final"""
+        self.file_list.clearSelection()
+        if self.all_features:
+            preview_text = "\n\n---\n\n".join(self._apply_project_and_tags(self.all_features))
+        else:
+            preview_text = "Nenhum bloco de Feature encontrado nos arquivos."
+        self.preview.setPlainText(preview_text)
+        self.back_button.setVisible(False)
+
+    def _on_project_changed(self, text):
+        self.project_key = text.strip()
+
+    def _on_tags_changed(self, text):
+        self.tags = text.strip()
+
+    def reset_all(self):
+        """Reseta todos os campos e estado da aplicação"""
+        self.file_list.clear()
+        self.preview.clear()
+        self.log_output.clear()
+        self.folder = None
+        self.all_features.clear()
+        self.project_input.clear()
+        self.tags_input.clear()
+        self.project_key = ""
+        self.tags = ""
+        self.folder_count = 0
+        self.file_count = 0
+        self.feature_count = 0
+        self.scenario_count = 0
+        self._update_summary()
+        self.log_output.append("[INFO] Aplicação resetada.")
 
     def generate_feature(self):
-        """Gera arquivo .feature consolidado"""
+        """Gera arquivo .feature consolidado com projeto e tags"""
         if not self.all_features:
             QMessageBox.warning(self, "Aviso", "Nenhum conteúdo para gerar .feature!")
             return
+
+        # Aviso se projeto ou tags estiverem vazios
+        if not self.project_key or not self.tags:
+            msg = "Você tem certeza que quer gerar o arquivo sem adicionar "
+            if not self.project_key and not self.tags:
+                msg += "projeto e tags?"
+            elif not self.project_key:
+                msg += "projeto?"
+            else:
+                msg += "tags?"
+            reply = QMessageBox.question(
+                self, "Atenção", msg,
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+            )
+            if reply != QMessageBox.Yes:
+                self.log_output.append("[INFO] Geração de arquivo cancelada pelo usuário.")
+                return
+
         output_path = os.path.join(self.folder, "combined.feature")
         try:
+            features_with_project_and_tags = self._apply_project_and_tags(self.all_features)
+
             with open(output_path, "w", encoding="utf-8") as f:
-                f.write("\n\n".join(self.all_features))
+                f.write("\n\n".join(features_with_project_and_tags))
 
             QMessageBox.information(self, "Sucesso", f"Arquivo salvo em:\n{output_path}")
             self.log_output.append(f"[OK] Arquivo .feature gerado em {output_path}")
@@ -337,71 +438,71 @@ class MainWindow(QMainWindow):
             """
         else:
             style = """
-                QMainWindow { background-color: #f7f7f7; color: #222222; }
-                QLabel { color: #222222; }
+        QMainWindow { background-color: #f7f7f7; color: #222222; }
+        QLabel { color: #222222; }
 
-                QPushButton {
-                    background-color: #ffffff;
-                    color: #222222;
-                    border-radius: 6px;
-                    padding: 6px 10px;
-                    border: 1px solid #bdbdbd;
-                }
-                QPushButton:hover { background-color: #f0f0f0; }
+        QPushButton {
+            background-color: #ffffff;
+            color: #222222;
+            border-radius: 6px;
+            padding: 6px 10px;
+            border: 1px solid #bdbdbd;
+        }
+        QPushButton:hover { background-color: #f0f0f0; }
 
-                QListWidget, QTextEdit {
-                    background-color: #ffffff;
-                    color: #222222;
-                    border: 1px solid #dcdcdc;
-                }
+        QListWidget, QTextEdit, QLineEdit {
+            background-color: #ffffff;
+            color: #222222;
+            border: 1px solid #dcdcdc;
+        }
 
-                QPushButton#btnSubfolders {
-                    background: #f6f6f6;
-                    border: 1px solid #bdbdbd;
-                    color: #333333;
-                }
-                QPushButton#btnSubfolders:hover { background: #eeeeee; }
-                QPushButton#btnSubfolders:checked {
-                    background: #2d7d46;
-                    color: #ffffff;
-                    border-color: #2d7d46;
-                }
-                QPushButton#btnSubfolders:checked:hover { background: #2f8b4f; }
+        QPushButton#btnSubfolders {
+            background: #f6f6f6;
+            border: 1px solid #bdbdbd;
+            color: #333333;
+        }
+        QPushButton#btnSubfolders:hover { background: #eeeeee; }
+        QPushButton#btnSubfolders:checked {
+            background: #2d7d46;
+            color: #ffffff;
+            border-color: #2d7d46;
+        }
+        QPushButton#btnSubfolders:checked:hover { background: #2f8b4f; }
 
-                QToolButton#btnTheme {
-                    border: none;
-                    padding: 4px;
-                    margin: 2px;
-                    border-radius: 6px;
-                }
-                QToolButton#btnTheme:hover { background: rgba(0,0,0,0.08); }
+        QToolButton#btnTheme {
+            border: none;
+            padding: 4px;
+            margin: 2px;
+            border-radius: 6px;
+        }
+        QToolButton#btnTheme:hover { background: rgba(0,0,0,0.08); }
 
-                QFrame#footerBar {
-                    background-color: #f7f7f7;
-                    border-top: 1px solid #dcdcdc;
-                }
-                QLabel#lblSummary { color: #555555; }
+        QFrame#footerBar {
+            background-color: #f7f7f7;
+            border-top: 1px solid #dcdcdc;
+        }
+        QLabel#lblSummary { color: #555555; }
 
-                /* ===== QSplitter: handle ===== */
-                QSplitter#mainSplitter::handle {
-                    background-color: rgba(0,0,0,0.04);
-                    border: none;
-                    margin: 0;
-                }
-                QSplitter#mainSplitter::handle:horizontal {
-                    width: 8px;
-                    border-left: 1px solid #dcdcdc;
-                    background-clip: padding;
-                }
-                QSplitter#mainSplitter::handle:horizontal:hover {
-                    background-color: rgba(0,0,0,0.08);
-                    border-left-color: #c8c8c8;
-                }
-                QSplitter#mainSplitter::handle:horizontal:pressed {
-                    background-color: rgba(0,0,0,0.10);
-                    border-left-color: #bdbdbd;
-                }
-            """
+        /* ===== QSplitter: handle ===== */
+        QSplitter#mainSplitter::handle {
+            background-color: rgba(0,0,0,0.04);
+            border: none;
+            margin: 0;
+        }
+        QSplitter#mainSplitter::handle:horizontal {
+            width: 8px;
+            border-left: 1px solid #dcdcdc;
+            background-clip: padding;
+        }
+        QSplitter#mainSplitter::handle:horizontal:hover {
+            background-color: rgba(0,0,0,0.08);
+            border-left-color: #c8c8c8;
+        }
+        QSplitter#mainSplitter::handle:horizontal:pressed {
+            background-color: rgba(0,0,0,0.10);
+            border-left-color: #bdbdbd;
+        }
+    """
 
         # ✅ Estas três linhas ficam FORA do if/else:
         self.setStyleSheet(style)
