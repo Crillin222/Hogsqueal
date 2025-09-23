@@ -1,17 +1,19 @@
 import re
+import resources_rc
+
+resources_rc.qInitResources()
 
 def parse_robot_file(file_path):
     """
-    Lê um arquivo .robot e extrai blocos de Feature que estão comentados.
-    Cada Feature começa com '# Feature' e continua até a próxima Feature ou o fim do arquivo.
-    
-    Retorna:
-    - features: lista de strings (cada feature completo)
-    - stats: dicionário com contagem de features e cenários
-    """
+    Reads a .robot file and extracts commented Feature blocks.
+    Each Feature starts with '# Feature' and continues until the next Feature or end of file.
 
-    features = []         # Lista final de features encontrados
-    current_feature = []  # Acumulador temporário do feature atual
+    Returns:
+    - features: list of strings (each complete feature)
+    - stats: dict with feature and scenario counts
+    """
+    features = []
+    current_feature = []
     inside_feature = False
 
     feature_count = 0
@@ -20,37 +22,25 @@ def parse_robot_file(file_path):
     with open(file_path, "r", encoding="utf-8") as f:
         for line in f:
             stripped = line.strip()
-
-            # Detecta início de um Feature
+            # Detect start of a Feature
             if stripped.lower().startswith("# feature"):
                 if current_feature:
                     features.append("\n".join(current_feature))
                     current_feature = []
-
                 inside_feature = True
                 feature_count += 1
                 current_feature.append(stripped.lstrip("#").strip())
-
-            # Dentro de um Feature
             elif inside_feature:
                 if stripped.startswith("#"):
                     content = stripped.lstrip("#").strip()
                     current_feature.append(content)
-
-                    # Conta cenários
                     if content.lower().startswith("scenario"):
                         scenario_count += 1
-
                 elif stripped == "":
-                    current_feature.append("")
+                    continue
                 else:
-                    # Linha fora de comentário → fecha feature
-                    if current_feature:
-                        features.append("\n".join(current_feature))
-                        current_feature = []
-                    inside_feature = False
-
-        # Se terminou ainda dentro de um Feature
+                    continue
+        # If file ends inside a Feature
         if current_feature:
             features.append("\n".join(current_feature))
 
@@ -58,5 +48,4 @@ def parse_robot_file(file_path):
         "features": feature_count,
         "scenarios": scenario_count
     }
-
     return features, stats
