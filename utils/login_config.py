@@ -1,25 +1,15 @@
-import json
+import os, json
+from pathlib import Path
 
-LOGIN_CONFIG_PATH = "login_config.json"
+def _config_path():
+    base = Path(os.getenv("APPDATA", Path.home())) / "Hogsqueal"
+    base.mkdir(parents=True, exist_ok=True)
+    return base / "login_config.json"
 
 def save_login_config(config):
-    """
-    Saves the login configuration to a JSON file.
-    """
-    try:
-        with open(LOGIN_CONFIG_PATH, "w", encoding="utf-8") as f:
-            json.dump(config, f)
-    except Exception as e:
-        # Optionally log error
-        pass
+    with open(_config_path(), "w", encoding="utf-8") as f:
+        json.dump(config, f)
 
 def load_login_config():
-    """
-    Loads the login configuration from a JSON file.
-    Returns an empty dict if not found.
-    """
-    try:
-        with open(LOGIN_CONFIG_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
+    p = _config_path()
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}

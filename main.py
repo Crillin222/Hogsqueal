@@ -16,7 +16,7 @@ class MainWindow(QMainWindow):
     """
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Robot → Cucumber → Jira")
+        self.setWindowTitle("Hobgoblin")
         self.resize(900, 600)
         self.dark_mode = True
 
@@ -24,8 +24,8 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.feature_creator_page = FeatureCreatorPage(self)
         self.xray_test_page = XrayTestPage(self)
-        self.tabs.addTab(self.feature_creator_page, "Create .feature")
-        self.tabs.addTab(self.xray_test_page, "Create Xray Test")
+        self.tabs.addTab(self.feature_creator_page, "Create .feature file")
+        self.tabs.addTab(self.xray_test_page, "Create Jira Test")
 
         # Theme switch button in the top right corner
         self.theme_button = QToolButton(self)

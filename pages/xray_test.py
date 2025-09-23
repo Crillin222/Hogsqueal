@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 
 from utils.login_config import save_login_config, load_login_config
+from utils.runtime import resource_path
 import resources_rc
 resources_rc.qInitResources()
 
@@ -30,7 +31,7 @@ class XrayTestPage(QWidget):
         layout.setSpacing(12)
 
         # --- Login group ---
-        login_group = QGroupBox("Jira/Xray Login")
+        login_group = QGroupBox("Jira Login")
         login_layout = QVBoxLayout(login_group)
 
         self.radio_userpass = QRadioButton("Username and Password")
@@ -111,7 +112,7 @@ class XrayTestPage(QWidget):
         buttons_row.setSpacing(8)
 
         # Create test button (usa o arquivo selecionado)
-        self.create_test_btn = QPushButton("Create Xray Test")
+        self.create_test_btn = QPushButton("Create Jira Test")
         self.create_test_btn.clicked.connect(self.create_xray_test)
         buttons_row.addWidget(self.create_test_btn)
 
@@ -252,17 +253,14 @@ class XrayTestPage(QWidget):
 
         self._run_curl_import_feature(feature_file, project_key=project_key)
 
+
     def create_dummy_test(self):
-        """
-        Cria Test no Xray/Jira usando SEMPRE o arquivo fixo:
-        resources/dummy/dummy.feature, com o Project Key do campo.
-        """
-        dummy_file = os.path.join("resources", "dummy", "dummy.feature")
+        dummy_file = resource_path("resources/dummy/dummy.feature")
         if not os.path.exists(dummy_file):
             QMessageBox.critical(
                 self, "Error",
-                "Dummy file not found:\nresources/dummy/dummy.feature\n\n"
-                "Check if the file exists and the working directory is the project root."
+                f"Dummy file not found:\n{dummy_file}\n\n"
+                "Check if the file exists and the working directory is correct."
             )
             return
 
