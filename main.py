@@ -64,6 +64,7 @@ class MainWindow(QMainWindow):
         # --- Novos campos no header ---
         self.project_input = QLineEdit()
         self.project_input.setPlaceholderText("Projeto (@KEYDOTESTE)")
+        self.project_input.setText("@PROJECTKEY")  # valor padrão
         self.project_input.textChanged.connect(self._on_project_changed)
         header.addWidget(self.project_input)
 
@@ -90,37 +91,49 @@ class MainWindow(QMainWindow):
 
         layout.addLayout(header)
 
-    # --- Conteúdo principal: Splitter (lista de arquivos e preview) ---
+    # --- Conteúdo principal: Splitter (esquerda: arquivos+log, direita: preview) ---
         self.splitter = QSplitter(Qt.Horizontal)
         self.splitter.setObjectName("mainSplitter")
-        self.splitter.setHandleWidth(8)  # confortável para arrastar
+        self.splitter.setHandleWidth(8)
+
+        # Lado esquerdo: arquivos + log empilhados
+        left_widget = QWidget()
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(6)
 
         self.file_list = QListWidget()
         self.file_list.itemClicked.connect(self.show_preview)
         self.file_list.setSelectionMode(QListWidget.SingleSelection)
-        self.splitter.addWidget(self.file_list)
+        left_layout.addWidget(self.file_list, 1)  # metade superior
+
+        self.log_output = QTextEdit()
+        self.log_output.setReadOnly(True)
+        self.log_output.setPlaceholderText("Logs do sistema aparecerão aqui...")
+        left_layout.addWidget(self.log_output, 1)  # metade inferior
+
+        self.splitter.addWidget(left_widget)
 
         # --- Botão para voltar à visualização geral ---
         self.back_button = QPushButton("Visualização Geral")
         self.back_button.setToolTip("Voltar para a visualização do arquivo .feature final")
         self.back_button.clicked.connect(self.show_overall_preview)
-        self.back_button.setVisible(False)  # Só aparece quando um arquivo está selecionado
-        layout.addWidget(self.back_button)
+        self.back_button.setVisible(False)
+        # Adicione o botão acima do preview (lado direito)
+        right_widget = QWidget()
+        right_layout = QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(6)
+        right_layout.addWidget(self.back_button, 0)
 
         self.preview = QTextEdit()
         self.preview.setReadOnly(True)
-        self.splitter.addWidget(self.preview)
+        right_layout.addWidget(self.preview, 1)
 
-        self.splitter.setSizes([250, 650])
+        self.splitter.addWidget(right_widget)
+
+        self.splitter.setSizes([350, 550])  # Ajuste conforme preferir
         layout.addWidget(self.splitter, 3)
-
-
-        # Logs
-        layout.addWidget(QLabel("Log do sistema:"), 0)
-        self.log_output = QTextEdit()
-        self.log_output.setReadOnly(True)
-        self.log_output.setPlaceholderText("Logs do sistema aparecerão aqui...")
-        layout.addWidget(self.log_output, 1)  # expande com a janela
 
         # --- Rodapé fixo (sumário + Gerar .feature) ---
         self.footer = QFrame()
