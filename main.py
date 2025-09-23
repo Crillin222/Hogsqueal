@@ -521,12 +521,48 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Sucesso", f"Arquivo salvo em:\n{output_path}")
             self.log_output.append(f"[OK] Arquivo .feature gerado em {output_path}")
 
+            # Abre no explorador
             if sys.platform == "win32":
                 subprocess.Popen(f'explorer /select,"{output_path}"')
             elif sys.platform == "darwin":
                 subprocess.Popen(["open", "-R", output_path])
             else:
                 subprocess.Popen(["xdg-open", os.path.dirname(output_path)])
+
+            # --- Integração com a página Xray ---
+            reply = QMessageBox.question(
+                self,
+                "Criar Teste no Xray",
+                "Deseja criar os testes no Jira Xray usando este arquivo agora?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            if reply == QMessageBox.Yes:
+                # Troca para a aba Xray
+                self.tabs.setCurrentWidget(self.xray_test_page)
+                # Preenche o campo do arquivo .feature na página Xray
+                self.xray_test_page.feature_file_path.setText(output_path)
+                # Carrega login salvo
+                self.xray_test_page.load_login_config()
+                # Checa se já há login/token salvo
+                login_type = None
+                user_ok = False
+                token_ok = False
+                try:
+                    with open(LOGIN_CONFIG_PATH, "r", encoding="utf-8") as f:
+                        config = json.load(f)
+                    login_type = config.get("login_type")
+                    if login_type == "userpass":
+                        user_ok = bool(config.get("user"))
+                    elif login_type == "token":
+                        token_ok = bool(config.get("token"))
+                except Exception:
+                    pass
+
+                if (login_type == "userpass" and user_ok) or (login_type == "token" and token_ok):
+                    # Executa automaticamente a criação do teste
+                    self.xray_test_page.create_xray_test()
+                # Senão, só deixa o arquivo preenchido e espera o usuário
 
         except Exception as e:
             QMessageBox.critical(self, "Erro", f"Falha ao salvar arquivo: {e}")
