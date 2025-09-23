@@ -1,11 +1,16 @@
+# pages/xray_test.py
+import os
 import subprocess
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QGroupBox, QRadioButton, QButtonGroup, QStackedWidget,
-    QLineEdit, QPushButton, QTextEdit, QHBoxLayout, QFileDialog, QMessageBox
+    QLineEdit, QPushButton, QTextEdit, QHBoxLayout, QFileDialog, QMessageBox, QLabel
 )
+from PySide6.QtCore import Qt
+
 from utils.login_config import save_login_config, load_login_config
 import resources_rc
 resources_rc.qInitResources()
+
 
 class XrayTestPage(QWidget):
     """
@@ -18,11 +23,13 @@ class XrayTestPage(QWidget):
         self.init_ui()
         self.load_login_config()
 
+    # --------------------------- UI ---------------------------
+
     def init_ui(self):
         layout = QVBoxLayout()
         layout.setSpacing(12)
 
-        # Login group
+        # --- Login group ---
         login_group = QGroupBox("Jira/Xray Login")
         login_layout = QVBoxLayout(login_group)
 
@@ -72,7 +79,22 @@ class XrayTestPage(QWidget):
 
         layout.addWidget(login_group)
 
-        # File selection group
+        # --- Target Project (Project Key) ---
+        project_group = QGroupBox("Target Project")
+        project_layout = QHBoxLayout(project_group)
+        project_layout.setSpacing(8)
+        lbl = QLabel("Project Key:")
+        self.project_key_field = QLineEdit()
+        self.project_key_field.setPlaceholderText("e.g., PBC14TEST")
+        self.project_key_field.setText("PBC14TEST")  # default
+        self.project_key_field.setClearButtonEnabled(True)
+        self.project_key_field.setMinimumWidth(160)
+        project_layout.addWidget(lbl)
+        project_layout.addWidget(self.project_key_field)
+        project_layout.addStretch()
+        layout.addWidget(project_group)
+
+        # --- File selection group ---
         file_group = QGroupBox(".feature file for test creation")
         file_layout = QHBoxLayout(file_group)
         self.feature_file_path = QLineEdit()
@@ -84,12 +106,28 @@ class XrayTestPage(QWidget):
         file_layout.addWidget(self.select_file_btn)
         layout.addWidget(file_group)
 
-        # Create test button
+        # --- Row of action buttons: Create Xray Test + Create dummy ---
+        buttons_row = QHBoxLayout()
+        buttons_row.setSpacing(8)
+
+        # Create test button (usa o arquivo selecionado)
         self.create_test_btn = QPushButton("Create Xray Test")
         self.create_test_btn.clicked.connect(self.create_xray_test)
-        layout.addWidget(self.create_test_btn)
+        buttons_row.addWidget(self.create_test_btn)
 
-        # Output log
+        # Create dummy (usa sempre resources/dummy/dummy.feature)
+        self.create_dummy_btn = QPushButton("Create dummy")
+        self.create_dummy_btn.setObjectName("btnSecondary")  # estilização opcional no QSS
+        self.create_dummy_btn.setToolTip(
+            "Create a Test in Jira using resources/dummy/dummy.feature (project key from the field above)"
+        )
+        self.create_dummy_btn.clicked.connect(self.create_dummy_test)
+        buttons_row.addWidget(self.create_dummy_btn)
+
+        buttons_row.addStretch()
+        layout.addLayout(buttons_row)
+
+        # --- Output log ---
         self.xray_log = QTextEdit()
         self.xray_log.setReadOnly(True)
         self.xray_log.setPlaceholderText("Command output will appear here...")
@@ -97,8 +135,12 @@ class XrayTestPage(QWidget):
 
         self.setLayout(layout)
 
+    # --------------------------- Actions ---------------------------
+
     def select_feature_file(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "Select .feature file", "", "Feature Files (*.feature)")
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Select .feature file", "", "Feature Files (*.feature)"
+        )
         if file_path:
             self.feature_file_path.setText(file_path)
 
@@ -123,37 +165,109 @@ class XrayTestPage(QWidget):
             self.token_field.setText(config.get("token", ""))
             self.user_field.setText("")
 
-    def create_xray_test(self):
-        self.save_login_config()
+    # --------------------------- Helpers ---------------------------
 
-        if not self.feature_file_path.text():
-            QMessageBox.warning(self, "Warning", "Select a .feature file to create the test.")
-            return
-
+    def _build_auth_args(self):
+        """
+        Retorna (auth_cmd, auth_log) para usar no curl e no log (com redação).
+        Mostra QMessageBox e retorna (None, None) se faltar credencial.
+        """
         if self.radio_userpass.isChecked():
             user = self.user_field.text().strip()
             passwd = self.pass_field.text().strip()
             if not user or not passwd:
                 QMessageBox.warning(self, "Warning", "Fill in Jira username and password.")
-                return
-            auth = f"-u {user}:{passwd}"
+                return None, None
+            return f'-u "{user}:{passwd}"', '-u "***:***"'
         else:
             token = self.token_field.text().strip()
             if not token:
                 QMessageBox.warning(self, "Warning", "Fill in the Jira token.")
-                return
-            auth = f'-H "Authorization: Bearer {token}"'
+                return None, None
+            return f'-H "Authorization: Bearer {token}"', '-H "Authorization: Bearer ***"'
 
-        feature_file = self.feature_file_path.text()
-        url = "https:///jerry.dieboldnixdorf.com/rest/raven/2.0/import/feature"
-        cmd = f'curl -X POST {auth} -F "file=@{feature_file}" "{url}"'
+    def _read_project_key(self) -> str | None:
+        pk = self.project_key_field.text().strip().upper()
+        if not pk:
+            QMessageBox.warning(self, "Warning", "Please fill the Project Key (e.g., PBC14TEST).")
+            return None
+        return pk
 
-        self.xray_log.append(f"[CMD] {cmd}")
+    def _run_curl_import_feature(self, feature_file: str, project_key: str):
+        """
+        Executa o curl de import do Xray para um arquivo .feature específico,
+        usando as credenciais configuradas e o projectKey na URL.
+        """
+        self.save_login_config()
+
+        auth_cmd, auth_log = self._build_auth_args()
+        if not auth_cmd:
+            return  # faltou credencial; mensagem já exibida
+
+        base_url = "https://jerry.dieboldnixdorf.com/rest/raven/2.0/import/feature"
+        url = f"{base_url}?projectKey={project_key}"
+
+        # Monta comando (Windows-friendly, com aspas)
+        cmd = f'curl -X POST {auth_cmd} -F "file=@{feature_file}" "{url}"'
+        cmd_for_log = f'curl -X POST {auth_log} -F "file=@{feature_file}" "{url}"'
+
+        self.xray_log.append(f"[CMD] {cmd_for_log}")
 
         try:
             result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-            self.xray_log.append(result.stdout)
+            if result.stdout:
+                self.xray_log.append(result.stdout)
             if result.stderr:
                 self.xray_log.append(f"[ERROR] {result.stderr}")
+
+            if result.returncode == 0:
+                QMessageBox.information(self, "Success", "Test created successfully in Jira/Xray.")
+            else:
+                QMessageBox.warning(
+                    self, "Warning",
+                    f"curl returned non-zero exit code ({result.returncode}). Check the log."
+                )
         except Exception as e:
             self.xray_log.append(f"[EXCEPTION] {e}")
+            QMessageBox.critical(self, "Error", f"Failed to run curl:\n{e}")
+
+    # --------------------------- Core actions ---------------------------
+
+    def create_xray_test(self):
+        """
+        Cria Test no Xray/Jira usando o .feature selecionado via UI
+        e o Project Key informado no campo acima.
+        """
+        feature_file = self.feature_file_path.text().strip()
+        if not feature_file:
+            QMessageBox.warning(self, "Warning", "Select a .feature file to create the test.")
+            return
+        if not os.path.exists(feature_file):
+            QMessageBox.critical(self, "Error", f"Selected file not found:\n{feature_file}")
+            return
+
+        project_key = self._read_project_key()
+        if not project_key:
+            return
+
+        self._run_curl_import_feature(feature_file, project_key=project_key)
+
+    def create_dummy_test(self):
+        """
+        Cria Test no Xray/Jira usando SEMPRE o arquivo fixo:
+        resources/dummy/dummy.feature, com o Project Key do campo.
+        """
+        dummy_file = os.path.join("resources", "dummy", "dummy.feature")
+        if not os.path.exists(dummy_file):
+            QMessageBox.critical(
+                self, "Error",
+                "Dummy file not found:\nresources/dummy/dummy.feature\n\n"
+                "Check if the file exists and the working directory is the project root."
+            )
+            return
+
+        project_key = self._read_project_key()
+        if not project_key:
+            return
+
+        self._run_curl_import_feature(dummy_file, project_key=project_key)

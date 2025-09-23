@@ -92,7 +92,7 @@ class FeatureCreatorPage(QWidget):
 
         # Right: preview
         self.back_button = QPushButton("Show All Features")
-        self.back_button.setToolTip("Back to the combined .feature preview")
+        self.back_button.setToolTip("Back to the xray .feature preview")
         self.back_button.clicked.connect(self.show_overall_preview)
         self.back_button.setVisible(False)
 
@@ -290,7 +290,7 @@ class FeatureCreatorPage(QWidget):
                 self.log_output.append("[INFO] File generation cancelled by user.")
                 return
 
-        output_path = os.path.join(self.folder, "combined.feature")
+        output_path = os.path.join(self.folder, "xray.feature")
         try:
             features_with_project_and_tags = self._apply_project_and_tags(self.all_features)
             with open(output_path, "w", encoding="utf-8") as f:
