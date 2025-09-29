@@ -1,5 +1,5 @@
 # pages/xray_test.py
-import os
+import os, tempfile, datetime
 import subprocess
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QGroupBox, QRadioButton, QButtonGroup, QStackedWidget,
@@ -168,6 +168,30 @@ class XrayTestPage(QWidget):
 
     # --------------------------- Helpers ---------------------------
 
+    def _render_last_update_line(self) -> str:
+        """Retorna timestamp no formato DD/MM/YYYY HH:MM (timezone local)."""
+        now = datetime.datetime.now().astimezone()
+        return now.strftime("%d/%m/%Y %H:%M")
+
+    def _make_timestamped_copy(self, feature_path: str) -> str:
+        """
+        Gera uma cópia temporária do .feature substituindo {{LAST_UPDATE}} pelo timestamp.
+        Se o placeholder não existir, a função não falha: cria cópia idêntica.
+        Retorna o caminho da cópia (o chamador deve excluir depois).
+        """
+        with open(feature_path, "r", encoding="utf-8") as fh:
+            text = fh.read()
+
+        ts = self._render_last_update_line()  # <--- usa self. aqui
+        new_text = text.replace("{{LAST_UPDATE}}", ts)
+
+        dir_name = os.path.dirname(os.path.abspath(feature_path))
+        fd, tmp_path = tempfile.mkstemp(prefix="tmp_dummy_", suffix=".feature", dir=dir_name, text=True)
+        os.close(fd)
+        with open(tmp_path, "w", encoding="utf-8", newline="\n") as out:
+            out.write(new_text if new_text.endswith("\n") else new_text + "\n")
+        return tmp_path
+
     def _build_auth_args(self):
         """
         Retorna (auth_cmd, auth_log) para usar no curl e no log (com redação).
@@ -196,22 +220,36 @@ class XrayTestPage(QWidget):
 
     def _run_curl_import_feature(self, feature_file: str, project_key: str):
         """
-        Executa o curl de import do Xray para um arquivo .feature específico,
-        usando as credenciais configuradas e o projectKey na URL.
+        Executa o curl de import do Xray para um arquivo .feature.
+        Antes do upload, criamos uma cópia temporária substituindo {{LAST_UPDATE}} pelo timestamp local.
+        Em caso de falha na preparação, fazemos fallback para o arquivo original.
         """
         self.save_login_config()
 
+        # --- NOVO: preparar cópia com timestamp (seguro, com fallback) ---
+        feature_for_upload = feature_file
+        tmp_to_cleanup = None
+        try:
+            tmp_to_cleanup = self._make_timestamped_copy(feature_file)
+            feature_for_upload = tmp_to_cleanup
+            self.xray_log.append(f"[INFO] Using timestamped copy: {feature_for_upload}")
+        except Exception as e:
+            self.xray_log.append(f"[WARN] Could not render timestamped copy, using original. Details: {e}")
+
+        # --- DAQUI PRA BAIXO: seu código original (inalterado) ---
         auth_cmd, auth_log = self._build_auth_args()
         if not auth_cmd:
-            return  # faltou credencial; mensagem já exibida
+            # limpeza da cópia temp (se existir)
+            if tmp_to_cleanup and os.path.exists(tmp_to_cleanup):
+                try: os.remove(tmp_to_cleanup)
+                except Exception: pass
+            return
 
         base_url = "https://jerry.dieboldnixdorf.com/rest/raven/2.0/import/feature"
         url = f"{base_url}?projectKey={project_key}"
 
-        # Monta comando (Windows-friendly, com aspas)
-        cmd = f'curl -X POST {auth_cmd} -F "file=@{feature_file}" "{url}"'
-        cmd_for_log = f'curl -X POST {auth_log} -F "file=@{feature_file}" "{url}"'
-
+        cmd = f'curl -X POST {auth_cmd} -F "file=@{feature_for_upload}" "{url}"'
+        cmd_for_log = f'curl -X POST {auth_log} -F "file=@{feature_for_upload}" "{url}"'
         self.xray_log.append(f"[CMD] {cmd_for_log}")
 
         try:
@@ -222,7 +260,7 @@ class XrayTestPage(QWidget):
                 self.xray_log.append(f"[ERROR] {result.stderr}")
 
             if result.returncode == 0:
-                QMessageBox.information(self, "Success", "Test created successfully in Jira/Xray.")
+                QMessageBox.information(self, "Success", "Test created/updated successfully in Jira/Xray.")
             else:
                 QMessageBox.warning(
                     self, "Warning",
@@ -231,6 +269,12 @@ class XrayTestPage(QWidget):
         except Exception as e:
             self.xray_log.append(f"[EXCEPTION] {e}")
             QMessageBox.critical(self, "Error", f"Failed to run curl:\n{e}")
+        finally:
+            # limpar a cópia temporária (se criada)
+            if tmp_to_cleanup and os.path.exists(tmp_to_cleanup):
+                try: os.remove(tmp_to_cleanup)
+                except Exception: pass
+
 
     # --------------------------- Core actions ---------------------------
 

@@ -8,3 +8,4 @@ Feature: Dummy sanity test
     Given the application is running
     When I click on "Create dummy"
     Then a new Test should be created in Jira
+    And the last update is {{LAST_UPDATE}}
