@@ -62,6 +62,7 @@ class MainWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon(":/icons/hobgoblin_icon.ico"))
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

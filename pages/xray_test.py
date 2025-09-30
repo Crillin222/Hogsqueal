@@ -1,4 +1,5 @@
-# pages/xray_test.py
+# -*- coding: utf-8 -*-
+
 import os, tempfile, datetime
 import subprocess
 from PySide6.QtWidgets import (
@@ -11,6 +12,12 @@ from utils.login_config import save_login_config, load_login_config
 from utils.runtime import resource_path
 import resources_rc
 resources_rc.qInitResources()
+
+
+# --- Configuração Essencial para o Teste de Verificação ---
+# Substitua 'PROJ-123' pela chave real do teste que você criou no Jira
+# para ser o alvo da atualização do "dummy test".
+JIRA_DUMMY_TEST_KEY = 'PROJ-123' 
 
 
 class XrayTestPage(QWidget):
@@ -117,10 +124,10 @@ class XrayTestPage(QWidget):
         buttons_row.addWidget(self.create_test_btn)
 
         # Create dummy (usa sempre resources/dummy/dummy.feature)
-        self.create_dummy_btn = QPushButton("Create dummy")
+        self.create_dummy_btn = QPushButton("Test Application Connection") # Nome alterado para clareza
         self.create_dummy_btn.setObjectName("btnSecondary")  # estilização opcional no QSS
         self.create_dummy_btn.setToolTip(
-            "Create a Test in Jira using resources/dummy/dummy.feature (project key from the field above)"
+            f"Updates a specific test ({JIRA_DUMMY_TEST_KEY}) in Jira with the current timestamp to verify the connection."
         )
         self.create_dummy_btn.clicked.connect(self.create_dummy_test)
         buttons_row.addWidget(self.create_dummy_btn)
@@ -182,7 +189,7 @@ class XrayTestPage(QWidget):
         with open(feature_path, "r", encoding="utf-8") as fh:
             text = fh.read()
 
-        ts = self._render_last_update_line()  # <--- usa self. aqui
+        ts = self._render_last_update_line()
         new_text = text.replace("{{LAST_UPDATE}}", ts)
 
         dir_name = os.path.dirname(os.path.abspath(feature_path))
@@ -221,12 +228,9 @@ class XrayTestPage(QWidget):
     def _run_curl_import_feature(self, feature_file: str, project_key: str):
         """
         Executa o curl de import do Xray para um arquivo .feature.
-        Antes do upload, criamos uma cópia temporária substituindo {{LAST_UPDATE}} pelo timestamp local.
-        Em caso de falha na preparação, fazemos fallback para o arquivo original.
         """
         self.save_login_config()
 
-        # --- NOVO: preparar cópia com timestamp (seguro, com fallback) ---
         feature_for_upload = feature_file
         tmp_to_cleanup = None
         try:
@@ -236,10 +240,8 @@ class XrayTestPage(QWidget):
         except Exception as e:
             self.xray_log.append(f"[WARN] Could not render timestamped copy, using original. Details: {e}")
 
-        # --- DAQUI PRA BAIXO: seu código original (inalterado) ---
         auth_cmd, auth_log = self._build_auth_args()
         if not auth_cmd:
-            # limpeza da cópia temp (se existir)
             if tmp_to_cleanup and os.path.exists(tmp_to_cleanup):
                 try: os.remove(tmp_to_cleanup)
                 except Exception: pass
@@ -270,11 +272,58 @@ class XrayTestPage(QWidget):
             self.xray_log.append(f"[EXCEPTION] {e}")
             QMessageBox.critical(self, "Error", f"Failed to run curl:\n{e}")
         finally:
-            # limpar a cópia temporária (se criada)
             if tmp_to_cleanup and os.path.exists(tmp_to_cleanup):
                 try: os.remove(tmp_to_cleanup)
                 except Exception: pass
 
+    # --------------------------- NOVA FUNÇÃO ---------------------------
+
+    def _run_jira_update_description(self):
+        """
+        Executa um curl para ATUALIZAR a descrição de um issue específico no Jira,
+        usando a API padrão do Jira em vez do import do Xray.
+        """
+        self.save_login_config()
+        auth_cmd, auth_log = self._build_auth_args()
+        if not auth_cmd:
+            return
+
+        timestamp = self._render_last_update_line()
+        # Escapar a barra invertida para o JSON e para a f-string
+        new_description = f"A verificação da aplicação foi executada com sucesso.\\nÚltima atualização: {timestamp}"
+        
+        # Payload JSON para a API do Jira para atualizar um campo
+        json_data = f'{{"fields": {{"description": "{new_description}"}}}}'
+        
+        base_url = "https://jerry.dieboldnixdorf.com/rest/api/2/issue"
+        url = f"{base_url}/{JIRA_DUMMY_TEST_KEY}"
+
+        # Comando curl para a API do Jira
+        cmd = f'curl -D- -X PUT {auth_cmd} -H "Content-Type: application/json" -d \'{json_data}\' "{url}"'
+        cmd_for_log = f'curl -D- -X PUT {auth_log} -H "Content-Type: application/json" -d \'{json_data}\' "{url}"'
+        
+        self.xray_log.append(f"\n[CMD] {cmd_for_log}")
+        
+        try:
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, encoding='utf-8')
+            
+            output = result.stdout or ""
+            error = result.stderr or ""
+            
+            if output:
+                self.xray_log.append(f"[RESPONSE]\n{output}")
+            if error:
+                self.xray_log.append(f"[ERROR]\n{error}")
+
+            # A API do Jira retorna 204 No Content em caso de sucesso na atualização
+            if result.returncode == 0 and 'HTTP/1.1 204' in output:
+                 QMessageBox.information(self, "Success", f"Connection test successful.\nIssue '{JIRA_DUMMY_TEST_KEY}' was updated in Jira.")
+            else:
+                QMessageBox.warning(self, "Warning", f"Could not update issue '{JIRA_DUMMY_TEST_KEY}'. Check the log for details.")
+
+        except Exception as e:
+            self.xray_log.append(f"[EXCEPTION] {e}")
+            QMessageBox.critical(self, "Error", f"Failed to run curl:\n{e}")
 
     # --------------------------- Core actions ---------------------------
 
@@ -297,19 +346,11 @@ class XrayTestPage(QWidget):
 
         self._run_curl_import_feature(feature_file, project_key=project_key)
 
-
     def create_dummy_test(self):
-        dummy_file = resource_path("resources/dummy/dummy.feature")
-        if not os.path.exists(dummy_file):
-            QMessageBox.critical(
-                self, "Error",
-                f"Dummy file not found:\n{dummy_file}\n\n"
-                "Check if the file exists and the working directory is correct."
-            )
-            return
-
-        project_key = self._read_project_key()
-        if not project_key:
-            return
-
-        self._run_curl_import_feature(dummy_file, project_key=project_key)
+        """
+        MODIFICADO: Não cria mais um teste com arquivo, apenas atualiza a descrição
+        do teste definido em JIRA_DUMMY_TEST_KEY para verificar a conexão.
+        """
+        self.xray_log.clear()
+        self.xray_log.append(f"--- Running Application Connection Test on issue: {JIRA_DUMMY_TEST_KEY} ---")
+        self._run_jira_update_description()

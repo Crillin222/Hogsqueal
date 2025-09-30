@@ -2,6 +2,7 @@
   <qresource prefix="/">
     <file>icons/sun.svg</file>
     <file>icons/moon.svg</file>
+    <file>icons/hobgoblin_icon.ico</file>
     <file>dummy/dummy.feature</file>
   </qresource>
 </RCC>
