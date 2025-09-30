@@ -2,6 +2,7 @@
 
 import os, tempfile, datetime
 import subprocess
+import json
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QGroupBox, QRadioButton, QButtonGroup, QStackedWidget,
     QLineEdit, QPushButton, QTextEdit, QHBoxLayout, QFileDialog, QMessageBox, QLabel
@@ -17,7 +18,7 @@ resources_rc.qInitResources()
 # --- Configuração Essencial para o Teste de Verificação ---
 # Substitua 'PROJ-123' pela chave real do teste que você criou no Jira
 # para ser o alvo da atualização do "dummy test".
-JIRA_DUMMY_TEST_KEY = 'PROJ-123' 
+JIRA_DUMMY_TEST_KEY = 'PBC14TEST-54285' 
 
 
 class XrayTestPage(QWidget):
@@ -276,8 +277,6 @@ class XrayTestPage(QWidget):
                 try: os.remove(tmp_to_cleanup)
                 except Exception: pass
 
-    # --------------------------- NOVA FUNÇÃO ---------------------------
-
     def _run_jira_update_description(self):
         """
         Executa um curl para ATUALIZAR a descrição de um issue específico no Jira,
@@ -289,19 +288,25 @@ class XrayTestPage(QWidget):
             return
 
         timestamp = self._render_last_update_line()
-        # Escapar a barra invertida para o JSON e para a f-string
-        new_description = f"A verificação da aplicação foi executada com sucesso.\\nÚltima atualização: {timestamp}"
-        
-        # Payload JSON para a API do Jira para atualizar um campo
-        json_data = f'{{"fields": {{"description": "{new_description}"}}}}'
-        
+
+        new_description = f"A verificação da aplicação foi executada com sucesso.\nÚltima atualização: {timestamp}"
+        json_data_raw = json.dumps({
+            "fields": {
+                "description": new_description
+            }
+        })
+
+        # Escapar aspas duplas para uso no shell
+        json_data_escaped = json_data_raw.replace('"', '\\"')
+
+
         base_url = "https://jerry.dieboldnixdorf.com/rest/api/2/issue"
         url = f"{base_url}/{JIRA_DUMMY_TEST_KEY}"
 
         # Comando curl para a API do Jira
-        cmd = f'curl -D- -X PUT {auth_cmd} -H "Content-Type: application/json" -d \'{json_data}\' "{url}"'
-        cmd_for_log = f'curl -D- -X PUT {auth_log} -H "Content-Type: application/json" -d \'{json_data}\' "{url}"'
-        
+        cmd = f'curl -D- -X PUT {auth_cmd} -H "Content-Type: application/json" -d "{json_data_escaped}" "{url}"'
+        cmd_for_log = f'curl -D- -X PUT {auth_log} -H "Content-Type: application/json" -d "{json_data_escaped}" "{url}"'
+
         self.xray_log.append(f"\n[CMD] {cmd_for_log}")
         
         try:
