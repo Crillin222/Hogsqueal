@@ -1,2 +1,17 @@
-*.pyc
-core\__pycache__
+# Python cache
+__pycache__/
+*.py[cod]
+
+# venv local
+.venv/
+
+# PyInstaller
+build/
+dist/
+*.spec  # (se você preferir gerar sempre; se versionar o .spec, remova esta linha)
+
+# IDE/OS
+*.log
+.vscode/
+.DS_Store
+Thumbs.db
