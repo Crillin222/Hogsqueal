@@ -7,6 +7,7 @@ import resources_rc
 from pages.feature_creator import FeatureCreatorPage
 from pages.xray_test import XrayTestPage
 from core.theme import apply_theme
+from services.file_service import find_robot_files
 
 resources_rc.qInitResources()
 
@@ -64,7 +65,7 @@ def main():
     app = QApplication(sys.argv)
     app.setWindowIcon(QIcon(":/icons/hobgoblin_icon.ico"))
     window = MainWindow()
-    window.show()
+    window.showMaximized()
     sys.exit(app.exec())
 
 if __name__ == "__main__":
