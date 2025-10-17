@@ -65,7 +65,7 @@ def main():
     app = QApplication(sys.argv)
     app.setWindowIcon(QIcon(":/icons/hobgoblin_icon.ico"))
     window = MainWindow()
-    window.show()
+    window.showMaximized()
     sys.exit(app.exec())
 
 if __name__ == "__main__":

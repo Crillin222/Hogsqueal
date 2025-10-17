@@ -20,37 +20,54 @@ def process_robot_files(robot_files: List[str]) -> Tuple[List[Dict[str, Any]], D
     final_stats = { "files_processed": len(robot_files), "scenarios_extracted": total_scenarios_found }
     return all_scenarios_data, final_stats
 
-def build_feature_content(scenarios_data: List[Dict[str, Any]], project_key: str, global_tags_str: str) -> Tuple[str, Dict[str, Any]]:
+# services/feature_service.py
+
+# ... (process_robot_files e save_feature_file continuam os mesmos) ...
+
+# services/feature_service.py
+
+# ... (process_robot_files e save_feature_file continuam os mesmos) ...
+
+def build_feature_content(scenarios_data: List[Dict[str, Any]], 
+                          project_key: str, 
+                          global_tags_str: str, 
+                          active_tags: List[str]) -> Tuple[str, Dict[str, Any]]:
     """
-    Constrói o conteúdo do .feature e um mapa de posições para cada cenário
-    usando um método robusto de junção de strings.
+    Constrói o conteúdo do .feature, usando uma lista de tags ativas como filtro.
     """
     if not scenarios_data:
         return "No scenarios found.", {}
 
-    header_parts = []
-    if project_key:
-        header_parts.append(project_key)
-    header_parts.append("Feature: Testes automatizados gerados pela aplicação Hobgoblin")
-    header = "\n".join(header_parts)
-
+    header = f"{project_key}\nFeature: Testes automatizados gerados pela aplicação Hobgoblin" if project_key else "Feature: Testes automatizados gerados pela aplicação Hobgoblin"
+    
     scenario_blocks = []
     global_tags = global_tags_str.split()
+
     for scenario in scenarios_data:
         block_parts = []
-        detected_tags = scenario.get('detected_tags', [])
-        all_tags = sorted(list(set(global_tags + detected_tags)))
         
-        if all_tags:
-            block_parts.append(" ".join(all_tags))
+        # Coleta todas as tags de todas as fontes para este cenário
+        detected = scenario.get('detected_tags', {})
+        force_tags = detected.get('force', [])
+        case_tags = detected.get('case', [])
+        additional_tags = scenario.get('additional_tags', '').split()
         
-        scenario_text = scenario.get('text', '# Scenario not found')
-        block_parts.append(scenario_text)
+        # Junta todas e remove duplicatas
+        all_potential_tags = set(global_tags + force_tags + case_tags + additional_tags)
         
+        # ### LÓGICA DO FILTRO ###
+        # Mantém apenas as tags que estão na lista de 'active_tags' da UI
+        final_tags = sorted([tag for tag in all_potential_tags if tag in active_tags])
+        
+        if final_tags:
+            block_parts.append(" ".join(final_tags))
+        
+        block_parts.append(scenario.get('text', '# Scenario not found'))
         scenario_blocks.append("\n".join(block_parts))
 
     final_content = header + "\n\n" + "\n\n".join(scenario_blocks)
 
+    # Recalcula o mapa de posições
     positions_map = {}
     current_pos = len(header) + 2
     for i, scenario in enumerate(scenarios_data):

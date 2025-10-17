@@ -1,189 +1,253 @@
-# pages/feature_creator.py - VERSÃO ESTÁVEL (SEM DESTAQUE)
+# pages/feature_creator.py - VERSÃO COM MASTER CHECKBOX E UI REFINADA
 
 import os
 import re
+from typing import List
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit, QListWidget, QListWidgetItem,
-    QTextEdit, QSplitter, QLabel, QFrame, QMessageBox, QFileDialog, QStackedWidget
+    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit, QTableWidget, QTableWidgetItem,
+    QTextEdit, QSplitter, QLabel, QFrame, QMessageBox, QFileDialog, QListWidget, QListWidgetItem, QStackedWidget,
+    QStylePainter, QStyleOptionButton, QStyle, QAbstractItemView, QHeaderView, QCheckBox
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSize
 
 from services.file_service import find_robot_files
 from services.feature_service import (
     process_robot_files, build_feature_content, save_feature_file
 )
 
+class VerticalButton(QPushButton):
+    def paintEvent(self, event):
+        painter = QStylePainter(self); option = QStyleOptionButton(); self.initStyleOption(option)
+        painter.drawControl(QStyle.CE_PushButtonBevel, option); painter.save()
+        painter.translate(self.width(), 0); painter.rotate(90)
+        text_rect = self.rect().transposed(); painter.drawText(text_rect, Qt.AlignCenter, self.text())
+        painter.restore()
+    def sizeHint(self):
+        hint = super().sizeHint(); return QSize(hint.height(), hint.width())
+
 class FeatureCreatorPage(QWidget):
     def __init__(self, main_window):
         super().__init__()
-        self.main_window = main_window
-        self.scenarios_data = []
-        self.folder_path = None
-        self.robot_files_found = []
-        self.positions_map = {} # O serviço retorna, mas não usamos aqui.
+        self.main_window = main_window; self.scenarios_data = []; self.folder_path = None
+        self.robot_files_found = []; self.positions_map = {}
         self.init_ui()
 
     def init_ui(self):
-        layout = QVBoxLayout()
-        header = QHBoxLayout(); header.setContentsMargins(0, 0, 0, 0); header.setSpacing(8)
+        page_layout = QVBoxLayout(self)
+        page_layout.setContentsMargins(10, 10, 10, 10); page_layout.setSpacing(8)
+
+        header = QHBoxLayout()
         self.folder_button = QPushButton("Select Folder"); self.folder_button.clicked.connect(self.run_scan_process)
         header.addWidget(self.folder_button)
         self.subfolders_checkbox = QPushButton("Include subfolders"); self.subfolders_checkbox.setObjectName("btnSubfolders"); self.subfolders_checkbox.setCheckable(True); self.subfolders_checkbox.setChecked(False); self.subfolders_checkbox.setToolTip("Toggle subfolder inclusion")
         header.addWidget(self.subfolders_checkbox)
-        self.project_input = QLineEdit(); self.project_input.setPlaceholderText("Project (@KEYDOTESTE)"); self.project_input.setText("@PBC14TEST"); self.project_input.textChanged.connect(self.update_previews)
-        header.addWidget(self.project_input)
-        self.tags_input = QLineEdit(); self.tags_input.setPlaceholderText("Global Tags (@tag1 @tag2)"); self.tags_input.textChanged.connect(self.update_previews)
-        header.addWidget(self.tags_input)
-        header.addStretch(); layout.addLayout(header)
+        header.addStretch()
+        page_layout.addLayout(header)
+
         self.splitter = QSplitter(Qt.Horizontal); self.splitter.setObjectName("mainSplitter"); self.splitter.setHandleWidth(8)
-        left_widget = QWidget()
-        left_layout = QVBoxLayout(left_widget); left_layout.setContentsMargins(0, 0, 0, 0); left_layout.setSpacing(6)
-        view_toggle_layout = QHBoxLayout()
-        self.view_toggle_button = QPushButton("Switch to File View"); self.view_toggle_button.clicked.connect(self.toggle_left_view)
-        view_toggle_layout.addWidget(self.view_toggle_button)
-        left_layout.addLayout(view_toggle_layout)
-        self.left_stack = QStackedWidget()
-        self.scenario_list = QListWidget()
-        self.file_list = QListWidget()
-        self.left_stack.addWidget(self.scenario_list)
-        self.left_stack.addWidget(self.file_list)
-        left_layout.addWidget(self.left_stack)
-        rename_buttons_layout = QHBoxLayout()
-        self.rename_by_file_button = QPushButton("Rename with Filename"); self.rename_by_file_button.clicked.connect(self.rename_scenario_by_filename)
-        self.rename_by_test_case_button = QPushButton("Rename with Test Case"); self.rename_by_test_case_button.clicked.connect(self.rename_scenario_by_test_case)
-        rename_buttons_layout.addWidget(self.rename_by_file_button)
-        rename_buttons_layout.addWidget(self.rename_by_test_case_button)
-        left_layout.addLayout(rename_buttons_layout)
+        
+        tools_container = QWidget()
+        tools_layout = QHBoxLayout(tools_container); tools_layout.setContentsMargins(0,0,0,0); tools_layout.setSpacing(5)
+
+        tool_nav_panel = QWidget(); tool_nav_layout = QVBoxLayout(tool_nav_panel)
+        self.btn_tags_tool = VerticalButton("Tags"); self.btn_tags_tool.setCheckable(True)
+        self.btn_rename_tool = VerticalButton("Rename"); self.btn_rename_tool.setCheckable(True)
+        self.btn_folders_tool = VerticalButton("Folders"); self.btn_folders_tool.setCheckable(True)
+        self.btn_tags_tool.clicked.connect(lambda: self.change_tool_page(0))
+        self.btn_rename_tool.clicked.connect(lambda: self.change_tool_page(1))
+        self.btn_folders_tool.clicked.connect(lambda: self.change_tool_page(2))
+        tool_nav_layout.addWidget(self.btn_tags_tool); tool_nav_layout.addWidget(self.btn_rename_tool); tool_nav_layout.addWidget(self.btn_folders_tool)
+        tool_nav_layout.addStretch()
+        tools_layout.addWidget(tool_nav_panel)
+
+        self.scenario_table = QTableWidget()
+        self.scenario_table.setColumnCount(3); self.scenario_table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.scenario_table.cellChanged.connect(self.on_tags_changed)
+        
+        # ### NOVO: Master Checkbox no Header da Tabela ###
+        self.master_checkbox = QCheckBox()
+        self.master_checkbox.setToolTip("Select / Deselect All")
+        self.master_checkbox.toggled.connect(self.toggle_all_checkboxes)
+        header_view = self.scenario_table.horizontalHeader()
+        header_view.setStretchLastSection(False) # Desativa para controlar o tamanho
+        # Adiciona o checkbox ao layout do header
+        header_layout = QHBoxLayout(header_view)
+        header_layout.addStretch()
+        header_layout.insertWidget(0, self.master_checkbox, 0, Qt.AlignmentFlag.AlignLeft)
+        header_layout.setContentsMargins(4,0,0,0) # Ajuste fino da posição
+        
+        self.scenario_table.setHorizontalHeaderLabels(["", "Scenario Name", "Additional Tags"])
+
+        self.tool_stack = QStackedWidget()
+        tools_layout.addWidget(self.tool_stack)
+
+        tags_tool_panel = QWidget(); tags_tool_layout = QVBoxLayout(tags_tool_panel)
+        tags_inputs_layout = QHBoxLayout()
+        self.project_input = QLineEdit(); self.project_input.setPlaceholderText("Project (@KEY)"); self.project_input.textChanged.connect(self.update_previews)
+        self.tags_input = QLineEdit(); self.tags_input.setPlaceholderText("Global Tags (@tag1)"); self.tags_input.textChanged.connect(self.update_previews)
+        tags_inputs_layout.addWidget(self.project_input); tags_inputs_layout.addWidget(self.tags_input)
+        tags_tool_layout.addLayout(tags_inputs_layout)
+        tags_tool_layout.addWidget(QLabel("Master Tag Control (Enable/Disable):"))
+        self.master_tags_list = QListWidget(); self.master_tags_list.itemChanged.connect(self.update_previews)
+        tags_tool_layout.addWidget(self.master_tags_list, 1)
+        tags_tool_layout.addWidget(QLabel("Scenarios (Add specific tags below):"))
+
+        rename_tool_panel = QWidget(); self.rename_tool_layout = QVBoxLayout(rename_tool_panel)
+        # Os botões de rename agora ficam em um painel próprio abaixo da tabela
+        self.rename_buttons_container = QWidget()
+        rename_buttons_layout = QHBoxLayout(self.rename_buttons_container); rename_buttons_layout.setContentsMargins(0,0,0,0)
+        self.rename_by_file_button = QPushButton("Rename Checked with Filename"); self.rename_by_file_button.clicked.connect(self.rename_scenario_by_filename)
+        self.rename_by_test_case_button = QPushButton("Rename Checked with Test Case"); self.rename_by_test_case_button.clicked.connect(self.rename_scenario_by_test_case)
+        rename_buttons_layout.addStretch(1); rename_buttons_layout.addWidget(self.rename_by_file_button); rename_buttons_layout.addWidget(self.rename_by_test_case_button); rename_buttons_layout.addStretch(1)
+
+        folders_tool_panel = QWidget(); folders_tool_layout = QVBoxLayout(folders_tool_panel)
+        self.file_list = QListWidget(); folders_tool_layout.addWidget(self.file_list)
+
+        self.tool_stack.addWidget(tags_tool_panel); self.tool_stack.addWidget(rename_tool_panel); self.tool_stack.addWidget(folders_tool_panel)
+        
+        right_panel = QWidget(); right_layout = QVBoxLayout(right_panel); right_layout.setContentsMargins(0,0,0,0)
+        self.preview = QTextEdit(); right_layout.addWidget(self.preview, 3)
         self.log_output = QTextEdit(); self.log_output.setReadOnly(True); self.log_output.setPlaceholderText("System logs will appear here...")
-        left_layout.addWidget(self.log_output, 1)
-        self.splitter.addWidget(left_widget)
-        right_widget = QWidget()
-        right_layout = QVBoxLayout(right_widget); right_layout.setContentsMargins(0, 0, 0, 0); right_layout.setSpacing(6)
-        self.preview = QTextEdit()
-        right_layout.addWidget(self.preview, 1)
-        self.splitter.addWidget(right_widget); self.splitter.setSizes([400, 500])
-        layout.addWidget(self.splitter, 3)
-        footer = QFrame(); footer.setObjectName("footerBar")
-        footer_layout = QHBoxLayout(footer); footer_layout.setContentsMargins(12, 6, 12, 6)
-        self.lblSummary = QLabel(); self.lblSummary.setObjectName("lblSummary")
-        footer_layout.addWidget(self.lblSummary)
-        footer_layout.addStretch()
+        right_layout.addWidget(self.log_output, 1)
+
+        self.splitter.addWidget(tools_container); self.splitter.addWidget(right_panel); self.splitter.setSizes([700, 500])
+        page_layout.addWidget(self.splitter)
+
+        self.footer = QFrame(); self.footer.setObjectName("footerBar"); self.footer.setMaximumHeight(40)
+        footer_layout = QHBoxLayout(self.footer); footer_layout.setContentsMargins(12, 6, 12, 6)
+        self.lblSummary = QLabel(); self.lblSummary.setObjectName("lblSummary"); footer_layout.addWidget(self.lblSummary); footer_layout.addStretch()
         self.generate_button = QPushButton("Generate .feature"); self.generate_button.clicked.connect(self.generate_feature_file)
         footer_layout.addWidget(self.generate_button)
         self.reset_button = QPushButton("Reset"); self.reset_button.clicked.connect(self.reset_all)
         footer_layout.addWidget(self.reset_button)
-        layout.addWidget(footer, 0); self.setLayout(layout); self.update_summary()
+        page_layout.addWidget(self.footer)
+        
+        self.change_tool_page(0)
 
-    def update_previews(self):
-        project_key = self.project_input.text().strip()
-        tags = self.tags_input.text().strip()
-        # A função de serviço agora retorna duas coisas, mas só usamos a primeira
-        content, self.positions_map = build_feature_content(self.scenarios_data, project_key, tags)
-        self.preview.setPlainText(content)
+    def change_tool_page(self, index: int):
+        self.tool_stack.setCurrentIndex(index)
+        
+        normal_width, selected_width = 30, 40
+        self.btn_tags_tool.setChecked(index == 0); self.btn_tags_tool.setFixedWidth(selected_width if index == 0 else normal_width)
+        self.btn_rename_tool.setChecked(index == 1); self.btn_rename_tool.setFixedWidth(selected_width if index == 1 else normal_width)
+        self.btn_folders_tool.setChecked(index == 2); self.btn_folders_tool.setFixedWidth(selected_width if index == 2 else normal_width)
 
+        # ### LÓGICA DE UI CORRIGIDA E REFINADA ###
+        is_rename_tab = (index == 1)
+        # Coluna Checkbox (0) e Master Checkbox só são visíveis na aba Rename
+        self.scenario_table.setColumnHidden(0, not is_rename_tab)
+        self.master_checkbox.setVisible(is_rename_tab)
+        # Coluna Additional Tags (2) só é visível na aba Tags
+        self.scenario_table.setColumnHidden(2, not (index == 0))
+        # Botões de Rename só são visíveis na aba Rename
+        self.rename_buttons_container.setVisible(is_rename_tab)
+
+        if index == 0:
+            self.tool_stack.widget(0).layout().addWidget(self.scenario_table, 1)
+        elif index == 1:
+            self.rename_tool_layout.insertWidget(0, self.scenario_table, 1)
+            self.rename_tool_layout.addWidget(self.rename_buttons_container)
+
+    def populate_scenario_table(self):
+        self.scenario_table.cellChanged.disconnect(self.on_tags_changed); self.scenario_table.setRowCount(0)
+        for row, scenario in enumerate(self.scenarios_data):
+            self.scenario_table.insertRow(row)
+            check_item = QTableWidgetItem(); check_item.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled); check_item.setCheckState(Qt.Unchecked)
+            self.scenario_table.setItem(row, 0, check_item)
+            name_item = QTableWidgetItem(f"{scenario['name']} ({scenario['source_file']})")
+            name_item.setData(Qt.UserRole, scenario['id']); name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
+            self.scenario_table.setItem(row, 1, name_item)
+            additional_tags_str = scenario.get('additional_tags', '')
+            self.scenario_table.setItem(row, 2, QTableWidgetItem(additional_tags_str))
+        self.scenario_table.resizeColumnsToContents()
+        self.scenario_table.setColumnWidth(0, 30) # Largura fixa para o checkbox
+        self.scenario_table.cellChanged.connect(self.on_tags_changed)
+        self.master_checkbox.setChecked(False)
+
+    def on_tags_changed(self, row, column):
+        if column != 2: return
+        scenario_id = self.scenario_table.item(row, 1).data(Qt.UserRole)
+        new_tags = self.scenario_table.item(row, column).text().strip()
+        for scenario in self.scenarios_data:
+            if scenario['id'] == scenario_id:
+                scenario['additional_tags'] = new_tags; break
+        self.update_previews()
+
+    def toggle_all_checkboxes(self, checked: bool):
+        state = Qt.Checked if checked else Qt.Unchecked
+        for row in range(self.scenario_table.rowCount()):
+            self.scenario_table.item(row, 0).setCheckState(state)
+
+    def _rename_selected_scenario(self, source_key: str):
+        renamed_count = 0
+        for row in range(self.scenario_table.rowCount()):
+            if self.scenario_table.item(row, 0).checkState() == Qt.Checked:
+                scenario_id = self.scenario_table.item(row, 1).data(Qt.UserRole)
+                for scenario in self.scenarios_data:
+                    if scenario['id'] == scenario_id:
+                        new_name_source = scenario.get(source_key, "Unknown")
+                        new_name = os.path.splitext(new_name_source)[0] if source_key == 'source_file' else new_name_source
+                        lines = scenario['text'].split('\n'); first_line = lines[0]
+                        keyword_match = re.match(r"^(.*?:)", first_line)
+                        if keyword_match:
+                            keyword = keyword_match.group(1); lines[0] = f"{keyword} {new_name}"; scenario['text'] = '\n'.join(lines); scenario['name'] = new_name
+                        renamed_count += 1
+                        break
+        if renamed_count == 0:
+            QMessageBox.warning(self, "Warning", "No scenarios selected. Please check the boxes for the scenarios you want to rename.")
+            return
+        self.log_output.append(f"[INFO] Renamed {renamed_count} scenarios.")
+        self.populate_scenario_table(); self.update_previews()
+    
+    # O resto das funções (run_scan_process, etc.) permanece o mesmo.
     def run_scan_process(self):
-        folder = QFileDialog.getExistingDirectory(self, "Select folder with .robot files")
+        folder = QFileDialog.getExistingDirectory(self, "Select folder with .robot files");
         if not folder: return
-        self.reset_all(clear_inputs=False)
-        self.folder_path = folder
+        self.reset_all(clear_inputs=False); self.folder_path = folder
         self.log_output.append(f"[INFO] Folder selected: {self.folder_path}")
         try:
             self.robot_files_found = find_robot_files(self.folder_path, self.subfolders_checkbox.isChecked())
             self.scenarios_data, stats = process_robot_files(self.robot_files_found)
-            self.populate_scenario_list()
-            self.file_list.clear()
-            self.file_list.addItems(self.robot_files_found)
-            self.update_previews()
+            self.populate_master_tag_list(); self.populate_scenario_table(); self.file_list.clear(); self.file_list.addItems(self.robot_files_found)
+            self.update_previews(); self.update_summary(stats)
             self.log_output.append(f"\n[SUMMARY]\n- .robot files found: {len(self.robot_files_found)}\n- Scenarios extracted: {stats['scenarios_extracted']}\n")
-            self.update_summary(stats)
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"An error occurred: {e}")
-            self.log_output.append(f"[ERROR] An unexpected error occurred: {e}")
-
-    def populate_scenario_list(self):
-        self.scenario_list.clear()
+            QMessageBox.critical(self, "Error", f"An error occurred during scan: {e}"); self.log_output.append(f"[ERROR] Scan failed: {e}")
+    def populate_master_tag_list(self):
+        self.master_tags_list.itemChanged.disconnect(self.update_previews); self.master_tags_list.clear()
+        unique_tags = set()
         for scenario in self.scenarios_data:
-            display_text = f"{scenario['name']}  ({scenario['source_file']})"
-            item = QListWidgetItem(display_text)
-            item.setData(Qt.UserRole, scenario['id'])
-            self.scenario_list.addItem(item)
-            
-    def _rename_selected_scenario(self, source_key: str):
-        selected_items = self.scenario_list.selectedItems()
-        if not selected_items:
-            QMessageBox.warning(self, "Warning", "Please select a scenario from the list first.")
-            return
-
-        selected_id = selected_items[0].data(Qt.UserRole)
-        for scenario in self.scenarios_data:
-            if scenario['id'] == selected_id:
-                new_name_source = scenario.get(source_key, "Unknown")
-                new_name = os.path.splitext(new_name_source)[0] if source_key == "source_file" else new_name_source
-                lines = scenario['text'].split('\n')
-                first_line = lines[0]
-                keyword_match = re.match(r"^(.*?:)", first_line)
-                if keyword_match:
-                    keyword = keyword_match.group(1)
-                    lines[0] = f"{keyword} {new_name}"
-                    scenario['text'] = '\n'.join(lines)
-                    scenario['name'] = new_name
-                self.log_output.append(f"[INFO] Renamed scenario '{selected_id[:8]}' to '{new_name}'.")
-                break
-        
-        self.populate_scenario_list()
-        # Mantém o item renomeado selecionado na lista
-        for i in range(self.scenario_list.count()):
-            if self.scenario_list.item(i).data(Qt.UserRole) == selected_id:
-                self.scenario_list.setCurrentRow(i)
-                break
-        self.update_previews()
-
+            detected = scenario.get('detected_tags', {})
+            unique_tags.update(detected.get('force', [])); unique_tags.update(detected.get('case', []))
+        for tag in sorted(list(unique_tags)):
+            item = QListWidgetItem(tag); item.setFlags(item.flags() | Qt.ItemIsUserCheckable); item.setCheckState(Qt.Checked)
+            self.master_tags_list.addItem(item)
+        self.master_tags_list.itemChanged.connect(self.update_previews)
+    def get_active_tags(self) -> List[str]:
+        active_tags = [];
+        for i in range(self.master_tags_list.count()):
+            item = self.master_tags_list.item(i)
+            if item.checkState() == Qt.Checked: active_tags.append(item.text())
+        return active_tags
+    def update_previews(self):
+        active_tags = self.get_active_tags()
+        content, self.positions_map = build_feature_content(self.scenarios_data, self.project_input.text().strip(), self.tags_input.text().strip(), active_tags)
+        self.preview.setPlainText(content)
     def rename_scenario_by_filename(self): self._rename_selected_scenario("source_file")
     def rename_scenario_by_test_case(self): self._rename_selected_scenario("robot_test_case")
-
     def generate_feature_file(self):
-        if not self.scenarios_data:
-            QMessageBox.warning(self, "Warning", "No scenarios found!")
-            return
         final_content = self.preview.toPlainText()
+        if not final_content or "No scenarios found" in final_content: QMessageBox.warning(self, "Warning", "No scenarios to generate!"); return
         default_name = os.path.join(self.folder_path or os.getcwd(), "xray_generated.feature")
         output_path, _ = QFileDialog.getSaveFileName(self, "Save .feature File", default_name, "Feature File (*.feature)")
-        if not output_path:
-            self.log_output.append("[INFO] File save cancelled.")
-            return
-        try:
-            save_feature_file(output_path, final_content)
-            QMessageBox.information(self, "Success", f"File saved successfully at:\n{output_path}")
-            self.log_output.append(f"[OK] .feature file generated at {output_path}")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to save file: {e}")
-            self.log_output.append(f"[ERROR] Failed to save file: {e}")
-
+        if not output_path: return
+        try: save_feature_file(output_path, final_content); QMessageBox.information(self, "Success", f"File saved at:\n{output_path}")
+        except Exception as e: QMessageBox.critical(self, "Error", f"Failed to save file: {e}")
     def update_summary(self, stats: dict = None):
-        if stats:
-            self.lblSummary.setText(f"Files: {stats.get('files_processed', 0)} • Scenarios: {stats.get('scenarios_extracted', 0)}")
-        else:
-            self.lblSummary.setText("Files: 0 • Scenarios: 0")
-            
-    def toggle_left_view(self):
-        current_index = self.left_stack.currentIndex()
-        if current_index == 0:
-            self.left_stack.setCurrentIndex(1)
-            self.view_toggle_button.setText("Switch to Scenario View")
-        else:
-            self.left_stack.setCurrentIndex(0)
-            self.view_toggle_button.setText("Switch to File View")
-
+        if stats: self.lblSummary.setText(f"Files: {stats.get('files_processed', 0)} • Scenarios: {stats.get('scenarios_extracted', 0)}")
+        else: self.lblSummary.setText("Files: 0 • Scenarios: 0")
     def reset_all(self, clear_inputs=True):
-        self.scenario_list.clear()
-        self.file_list.clear()
-        self.preview.clear()
-        self.log_output.clear()
-        self.folder_path = None
-        self.scenarios_data = []
-        self.robot_files_found = []
-        if clear_inputs:
-            self.project_input.setText("@PBC14TEST")
-            self.tags_input.clear()
-        self.update_summary()
-        self.log_output.append("[INFO] Application reset.")
+        self.master_tags_list.clear(); self.scenario_table.setRowCount(0); self.file_list.clear(); self.preview.clear(); self.log_output.clear()
+        self.folder_path = None; self.scenarios_data = []; self.robot_files_found = []
+        if clear_inputs: self.project_input.setText("@PBC14TEST"); self.tags_input.clear()
+        self.update_summary(); self.log_output.append("[INFO] Application reset.")
