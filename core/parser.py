@@ -1,76 +1,93 @@
+# core/parser.py
+
+import os
 import re
-import resources_rc
-resources_rc.qInitResources()
+from typing import List, Dict, Any, Tuple
+import uuid
 
-def extract_scenarios_from_robot_file(file_path):
+def _extract_scenario_name(scenario_text: str) -> str:
+    """Helper para extrair o nome de um cenário do seu texto completo."""
+    match = re.search(r"Scenario(?: Outline)?:(.*)", scenario_text, re.IGNORECASE)
+    return match.group(1).strip() if match else "Unnamed Scenario"
+
+def extract_scenarios_from_robot_file(file_path: str) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
-    Lê um arquivo .robot e extrai os blocos de Cenário Gherkin comentados.
-    Esta versão é robusta contra diferentes tipos de espaçamento e caracteres
-    invisíveis (como o No-Break Space, U+00A0).
-
-    Args:
-        file_path (str): O caminho para o arquivo .robot.
-
-    Returns:
-        A tuple containing:
-        - scenarios (list[str]): Uma lista de strings, onde cada string é um cenário completo e descomentado.
-        - stats (dict): Um dicionário com a contagem de cenários encontrados.
+    Lê um arquivo .robot e extrai blocos de Cenário Gherkin comentados,
+    retornando uma estrutura de dados rica para cada um.
     """
-    scenarios = []
+    scenarios_data = []
     current_scenario_lines = []
-    found_feature_context = False
-    scenario_count = 0
-
+    captured_tags = []
+    
+    in_test_cases_section = False
+    current_robot_test_case = "Unknown Test Case"
+    
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             for line in f:
-                # ETAPA DE LIMPEZA: Normaliza espaços e remove o caractere invisível
-                # Substitui o caractere especial (U+00A0) por um espaço normal
-                cleaned_line = line.replace('\u00A0', ' ')
+                # ### LÓGICA DE CORREÇÃO ###
+                # Mantemos a linha original com espaços à esquerda para checar a indentação
+                original_line = line.replace('\u00A0', ' ')
+                cleaned_line = original_line.strip()
+
+                if cleaned_line.lower().startswith("*** test cases ***"):
+                    in_test_cases_section = True
+                    continue
+                if cleaned_line.lower().startswith("***"):
+                    in_test_cases_section = False
+                    continue
                 
-                # Remove espaços no início e no fim da linha
-                stripped_line = cleaned_line.strip()
-
-                # Se a linha não começar com '#', não é Gherkin comentado.
-                if not stripped_line.startswith("#"):
-                    # Se a linha não for vazia, consideramos que o bloco Gherkin acabou.
-                    if stripped_line:
-                        found_feature_context = False
+                # Se estamos na seção de testes e a linha NÃO é um comentário...
+                if in_test_cases_section and not cleaned_line.startswith("#"):
+                    # ...e a linha NÃO começa com espaço (não é indentada), então é um nome de Test Case!
+                    if cleaned_line and not original_line.startswith((' ', '\t')):
+                        current_robot_test_case = cleaned_line
+                
+                if not cleaned_line.startswith("#"):
                     continue
 
-                # Remove o '#' e espaços extras do início para análise do conteúdo
-                # Ex: "#   Scenario:" vira "Scenario:"
-                content_line = stripped_line.lstrip("#").strip()
+                content_line = cleaned_line.lstrip("#").strip()
 
-                # Procura pelo início de um contexto de feature
-                if content_line.lower().startswith("feature"):
-                    found_feature_context = True
+                if content_line.startswith("@"):
+                    captured_tags.extend(content_line.split())
                     continue
 
-                if not found_feature_context:
-                    continue
-
-                # Detecta o início de um novo cenário
-                if content_line.lower().startswith("scenario"):
+                if content_line.lower().startswith(("scenario", "cenário")):
                     if current_scenario_lines:
-                        scenarios.append("\n".join(current_scenario_lines))
+                        full_text = "\n".join(current_scenario_lines)
+                        scenario_obj = {
+                            "id": str(uuid.uuid4()),
+                            "name": _extract_scenario_name(full_text),
+                            "text": full_text,
+                            "source_file": os.path.basename(file_path),
+                            "robot_test_case": current_robot_test_case,
+                            "detected_tags": captured_tags
+                        }
+                        scenarios_data.append(scenario_obj)
                     
-                    scenario_count += 1
                     current_scenario_lines = [content_line]
+                    captured_tags = []
                 
-                # Se já iniciamos um cenário, adiciona as linhas seguintes
                 elif current_scenario_lines and content_line:
                     current_scenario_lines.append(content_line)
 
-            # Garante que o último cenário do arquivo seja adicionado
             if current_scenario_lines:
-                scenarios.append("\n".join(current_scenario_lines))
+                full_text = "\n".join(current_scenario_lines)
+                scenario_obj = {
+                    "id": str(uuid.uuid4()),
+                    "name": _extract_scenario_name(full_text),
+                    "text": full_text,
+                    "source_file": os.path.basename(file_path),
+                    "robot_test_case": current_robot_test_case,
+                    "detected_tags": captured_tags
+                }
+                scenarios_data.append(scenario_obj)
 
     except Exception as e:
         print(f"Erro ao ler o arquivo {file_path}: {e}")
         return [], {"scenarios": 0}
 
     stats = {
-        "scenarios": scenario_count
+        "scenarios": len(scenarios_data)
     }
-    return scenarios, stats
+    return scenarios_data, stats

@@ -7,6 +7,7 @@ import resources_rc
 from pages.feature_creator import FeatureCreatorPage
 from pages.xray_test import XrayTestPage
 from core.theme import apply_theme
+from services.file_service import find_robot_files
 
 resources_rc.qInitResources()
 
