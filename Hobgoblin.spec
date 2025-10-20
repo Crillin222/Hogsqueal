@@ -46,7 +46,7 @@ exe = EXE(
     strip=False,
     upx=False,
     console=False,  # True se quiser console para debug
-    icon='resources/icons/hobgoblin_icon.ico'  # <- LINHA ADICIONADA
+    icon='hobgoblin.ico'
 )
 
 coll = COLLECT(
