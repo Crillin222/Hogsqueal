@@ -1,4 +1,4 @@
-# pages/feature_creator.py - VERSÃO COM MASTER CHECKBOX E UI REFINADA
+# pages/feature_creator.py - VERSÃO FINAL (Global Tags Corrigido + Project Key Removido)
 
 import os
 import re
@@ -64,17 +64,15 @@ class FeatureCreatorPage(QWidget):
         self.scenario_table.setColumnCount(3); self.scenario_table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.scenario_table.cellChanged.connect(self.on_tags_changed)
         
-        # ### NOVO: Master Checkbox no Header da Tabela ###
         self.master_checkbox = QCheckBox()
         self.master_checkbox.setToolTip("Select / Deselect All")
         self.master_checkbox.toggled.connect(self.toggle_all_checkboxes)
         header_view = self.scenario_table.horizontalHeader()
-        header_view.setStretchLastSection(False) # Desativa para controlar o tamanho
-        # Adiciona o checkbox ao layout do header
+        header_view.setStretchLastSection(False) 
         header_layout = QHBoxLayout(header_view)
         header_layout.addStretch()
         header_layout.insertWidget(0, self.master_checkbox, 0, Qt.AlignmentFlag.AlignLeft)
-        header_layout.setContentsMargins(4,0,0,0) # Ajuste fino da posição
+        header_layout.setContentsMargins(4,0,0,0) 
         
         self.scenario_table.setHorizontalHeaderLabels(["", "Scenario Name", "Additional Tags"])
 
@@ -83,9 +81,11 @@ class FeatureCreatorPage(QWidget):
 
         tags_tool_panel = QWidget(); tags_tool_layout = QVBoxLayout(tags_tool_panel)
         tags_inputs_layout = QHBoxLayout()
-        self.project_input = QLineEdit(); self.project_input.setPlaceholderText("Project (@KEY)"); self.project_input.textChanged.connect(self.update_previews)
+        
+        # ### ALTERADO: Removido Project Input ###
         self.tags_input = QLineEdit(); self.tags_input.setPlaceholderText("Global Tags (@tag1)"); self.tags_input.textChanged.connect(self.update_previews)
-        tags_inputs_layout.addWidget(self.project_input); tags_inputs_layout.addWidget(self.tags_input)
+        tags_inputs_layout.addWidget(self.tags_input)
+        
         tags_tool_layout.addLayout(tags_inputs_layout)
         tags_tool_layout.addWidget(QLabel("Master Tag Control (Enable/Disable):"))
         self.master_tags_list = QListWidget(); self.master_tags_list.itemChanged.connect(self.update_previews)
@@ -93,12 +93,13 @@ class FeatureCreatorPage(QWidget):
         tags_tool_layout.addWidget(QLabel("Scenarios (Add specific tags below):"))
 
         rename_tool_panel = QWidget(); self.rename_tool_layout = QVBoxLayout(rename_tool_panel)
-        # Os botões de rename agora ficam em um painel próprio abaixo da tabela
-        self.rename_buttons_container = QWidget()
-        rename_buttons_layout = QHBoxLayout(self.rename_buttons_container); rename_buttons_layout.setContentsMargins(0,0,0,0)
+        self.rename_tool_layout.addWidget(QLabel("Select scenarios to rename:"))
+        rename_buttons_container = QWidget()
+        rename_buttons_layout = QHBoxLayout(rename_buttons_container); rename_buttons_layout.setContentsMargins(0,0,0,0)
         self.rename_by_file_button = QPushButton("Rename Checked with Filename"); self.rename_by_file_button.clicked.connect(self.rename_scenario_by_filename)
         self.rename_by_test_case_button = QPushButton("Rename Checked with Test Case"); self.rename_by_test_case_button.clicked.connect(self.rename_scenario_by_test_case)
         rename_buttons_layout.addStretch(1); rename_buttons_layout.addWidget(self.rename_by_file_button); rename_buttons_layout.addWidget(self.rename_by_test_case_button); rename_buttons_layout.addStretch(1)
+        self.rename_tool_layout.addWidget(rename_buttons_container)
 
         folders_tool_panel = QWidget(); folders_tool_layout = QVBoxLayout(folders_tool_panel)
         self.file_list = QListWidget(); folders_tool_layout.addWidget(self.file_list)
@@ -132,35 +133,33 @@ class FeatureCreatorPage(QWidget):
         self.btn_rename_tool.setChecked(index == 1); self.btn_rename_tool.setFixedWidth(selected_width if index == 1 else normal_width)
         self.btn_folders_tool.setChecked(index == 2); self.btn_folders_tool.setFixedWidth(selected_width if index == 2 else normal_width)
 
-        # ### LÓGICA DE UI CORRIGIDA E REFINADA ###
-        is_rename_tab = (index == 1)
-        # Coluna Checkbox (0) e Master Checkbox só são visíveis na aba Rename
-        self.scenario_table.setColumnHidden(0, not is_rename_tab)
-        self.master_checkbox.setVisible(is_rename_tab)
-        # Coluna Additional Tags (2) só é visível na aba Tags
-        self.scenario_table.setColumnHidden(2, not (index == 0))
-        # Botões de Rename só são visíveis na aba Rename
-        self.rename_buttons_container.setVisible(is_rename_tab)
+        self.scenario_table.setColumnHidden(2, index != 0)
+        # ### AJUSTE ###: Coluna 0 (Checkbox) só visível na aba Rename (index 1)
+        self.scenario_table.setColumnHidden(0, index != 1)
+        self.master_checkbox.setVisible(index == 1)
 
         if index == 0:
             self.tool_stack.widget(0).layout().addWidget(self.scenario_table, 1)
         elif index == 1:
-            self.rename_tool_layout.insertWidget(0, self.scenario_table, 1)
-            self.rename_tool_layout.addWidget(self.rename_buttons_container)
+            self.rename_tool_layout.insertWidget(1, self.scenario_table, 1)
 
     def populate_scenario_table(self):
         self.scenario_table.cellChanged.disconnect(self.on_tags_changed); self.scenario_table.setRowCount(0)
         for row, scenario in enumerate(self.scenarios_data):
             self.scenario_table.insertRow(row)
+            
             check_item = QTableWidgetItem(); check_item.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled); check_item.setCheckState(Qt.Unchecked)
             self.scenario_table.setItem(row, 0, check_item)
+
             name_item = QTableWidgetItem(f"{scenario['name']} ({scenario['source_file']})")
             name_item.setData(Qt.UserRole, scenario['id']); name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
             self.scenario_table.setItem(row, 1, name_item)
+
             additional_tags_str = scenario.get('additional_tags', '')
             self.scenario_table.setItem(row, 2, QTableWidgetItem(additional_tags_str))
+
         self.scenario_table.resizeColumnsToContents()
-        self.scenario_table.setColumnWidth(0, 30) # Largura fixa para o checkbox
+        self.scenario_table.setColumnWidth(0, 30)
         self.scenario_table.cellChanged.connect(self.on_tags_changed)
         self.master_checkbox.setChecked(False)
 
@@ -199,7 +198,6 @@ class FeatureCreatorPage(QWidget):
         self.log_output.append(f"[INFO] Renamed {renamed_count} scenarios.")
         self.populate_scenario_table(); self.update_previews()
     
-    # O resto das funções (run_scan_process, etc.) permanece o mesmo.
     def run_scan_process(self):
         folder = QFileDialog.getExistingDirectory(self, "Select folder with .robot files");
         if not folder: return
@@ -231,8 +229,15 @@ class FeatureCreatorPage(QWidget):
         return active_tags
     def update_previews(self):
         active_tags = self.get_active_tags()
-        content, self.positions_map = build_feature_content(self.scenarios_data, self.project_input.text().strip(), self.tags_input.text().strip(), active_tags)
+        
+        # ### ATUALIZADO: Chamada sem o project_key ###
+        content, self.positions_map = build_feature_content(
+            self.scenarios_data, 
+            self.tags_input.text().strip(), 
+            active_tags
+        )
         self.preview.setPlainText(content)
+
     def rename_scenario_by_filename(self): self._rename_selected_scenario("source_file")
     def rename_scenario_by_test_case(self): self._rename_selected_scenario("robot_test_case")
     def generate_feature_file(self):
@@ -249,5 +254,5 @@ class FeatureCreatorPage(QWidget):
     def reset_all(self, clear_inputs=True):
         self.master_tags_list.clear(); self.scenario_table.setRowCount(0); self.file_list.clear(); self.preview.clear(); self.log_output.clear()
         self.folder_path = None; self.scenarios_data = []; self.robot_files_found = []
-        if clear_inputs: self.project_input.setText("@PBC14TEST"); self.tags_input.clear()
+        if clear_inputs: self.tags_input.clear() # Limpa tags, project input removido
         self.update_summary(); self.log_output.append("[INFO] Application reset.")
